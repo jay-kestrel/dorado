@@ -1,0 +1,517 @@
+{
+  "schema_version": 1,
+  "metadata": {
+    "timestamp_utc": "2026-10-30T21:25:21.748810+00:00",
+    "revision": "6144c21400389abde5fbf0d2bc5b7d359f850852",
+    "working_tree_dirty": false,
+    "routing_source_sha256": {
+      "particle_track.py": "bfc217c904679c61486ccd4a9be5233d65352cc88d293416632293df1c371757",
+      "lagrangian_walker.py": "ee88ffd25fc2651ae91108b0b6995e915075c0c96c4e6a825e1d119c39368088"
+    },
+    "python": "3.13.14",
+    "numpy": "2.3.5",
+    "platform": "Linux-6.1.158+-x86_64-with-glibc2.41",
+    "machine": "x86_64",
+    "processor": "",
+    "logical_cpus": 8,
+    "timer": "time.perf_counter",
+    "timed_region": "run_iteration only",
+    "warmup_iterations": 1,
+    "state_reset": "deepcopy staged particles and reset RNG outside timing",
+    "normalization": "attempted particle-steps, including frozen particles",
+    "thread_environment": {
+      "OMP_NUM_THREADS": null,
+      "OPENBLAS_NUM_THREADS": null,
+      "MKL_NUM_THREADS": null
+    }
+  },
+  "skipped": [],
+  "results": [
+    {
+      "workload": "rcm",
+      "shape": [
+        120,
+        240
+      ],
+      "dx": 50.0,
+      "data_sha256": "f22611244ea87af19b86d6659e70aca42ba961a401ff6fd0a5ec94af8b68dad3",
+      "backend": "python",
+      "particles": 500,
+      "steps": 20,
+      "repeats": 3,
+      "seed": 0,
+      "n_threads": 1,
+      "seconds": [
+        0.14864101100000937,
+        0.16239518400000463,
+        0.14473109200000067
+      ],
+      "median_seconds": 0.14864101100000937,
+      "microseconds_per_particle_step": 14.864101100000937,
+      "appended_steps": [
+        10000,
+        10000,
+        10000
+      ]
+    },
+    {
+      "workload": "rcm",
+      "shape": [
+        120,
+        240
+      ],
+      "dx": 50.0,
+      "data_sha256": "f22611244ea87af19b86d6659e70aca42ba961a401ff6fd0a5ec94af8b68dad3",
+      "backend": "numpy",
+      "particles": 500,
+      "steps": 20,
+      "repeats": 3,
+      "seed": 0,
+      "n_threads": 1,
+      "seconds": [
+        0.014746994999995877,
+        0.014636586000008833,
+        0.014207854999995106
+      ],
+      "median_seconds": 0.014636586000008833,
+      "microseconds_per_particle_step": 1.4636586000008833,
+      "appended_steps": [
+        10000,
+        10000,
+        10000
+      ]
+    },
+    {
+      "workload": "rcm",
+      "shape": [
+        120,
+        240
+      ],
+      "dx": 50.0,
+      "data_sha256": "f22611244ea87af19b86d6659e70aca42ba961a401ff6fd0a5ec94af8b68dad3",
+      "backend": "rust",
+      "particles": 500,
+      "steps": 20,
+      "repeats": 3,
+      "seed": 0,
+      "n_threads": 1,
+      "seconds": [
+        0.016870300999997312,
+        0.016026093999997215,
+        0.016073919999996633
+      ],
+      "median_seconds": 0.016073919999996633,
+      "microseconds_per_particle_step": 1.6073919999996633,
+      "appended_steps": [
+        10000,
+        10000,
+        10000
+      ]
+    },
+    {
+      "workload": "rcm",
+      "shape": [
+        120,
+        240
+      ],
+      "dx": 50.0,
+      "data_sha256": "f22611244ea87af19b86d6659e70aca42ba961a401ff6fd0a5ec94af8b68dad3",
+      "backend": "python",
+      "particles": 2500,
+      "steps": 20,
+      "repeats": 3,
+      "seed": 0,
+      "n_threads": 1,
+      "seconds": [
+        0.7398662820000084,
+        0.7486222670000018,
+        0.8471928470000023
+      ],
+      "median_seconds": 0.7486222670000018,
+      "microseconds_per_particle_step": 14.972445340000034,
+      "appended_steps": [
+        50000,
+        50000,
+        50000
+      ]
+    },
+    {
+      "workload": "rcm",
+      "shape": [
+        120,
+        240
+      ],
+      "dx": 50.0,
+      "data_sha256": "f22611244ea87af19b86d6659e70aca42ba961a401ff6fd0a5ec94af8b68dad3",
+      "backend": "numpy",
+      "particles": 2500,
+      "steps": 20,
+      "repeats": 3,
+      "seed": 0,
+      "n_threads": 1,
+      "seconds": [
+        0.07857262000000276,
+        0.10956256599999392,
+        0.07765387000000601
+      ],
+      "median_seconds": 0.07857262000000276,
+      "microseconds_per_particle_step": 1.5714524000000551,
+      "appended_steps": [
+        50000,
+        50000,
+        50000
+      ]
+    },
+    {
+      "workload": "rcm",
+      "shape": [
+        120,
+        240
+      ],
+      "dx": 50.0,
+      "data_sha256": "f22611244ea87af19b86d6659e70aca42ba961a401ff6fd0a5ec94af8b68dad3",
+      "backend": "rust",
+      "particles": 2500,
+      "steps": 20,
+      "repeats": 3,
+      "seed": 0,
+      "n_threads": 1,
+      "seconds": [
+        0.12794642000000067,
+        0.09418538700001022,
+        0.09422317899999655
+      ],
+      "median_seconds": 0.09422317899999655,
+      "microseconds_per_particle_step": 1.8844635799999312,
+      "appended_steps": [
+        50000,
+        50000,
+        50000
+      ]
+    },
+    {
+      "workload": "rcm",
+      "shape": [
+        120,
+        240
+      ],
+      "dx": 50.0,
+      "data_sha256": "f22611244ea87af19b86d6659e70aca42ba961a401ff6fd0a5ec94af8b68dad3",
+      "backend": "python",
+      "particles": 5000,
+      "steps": 20,
+      "repeats": 3,
+      "seed": 0,
+      "n_threads": 1,
+      "seconds": [
+        1.6982831800000042,
+        1.6329819729999997,
+        1.5614418440000009
+      ],
+      "median_seconds": 1.6329819729999997,
+      "microseconds_per_particle_step": 16.329819729999997,
+      "appended_steps": [
+        100000,
+        100000,
+        100000
+      ]
+    },
+    {
+      "workload": "rcm",
+      "shape": [
+        120,
+        240
+      ],
+      "dx": 50.0,
+      "data_sha256": "f22611244ea87af19b86d6659e70aca42ba961a401ff6fd0a5ec94af8b68dad3",
+      "backend": "numpy",
+      "particles": 5000,
+      "steps": 20,
+      "repeats": 3,
+      "seed": 0,
+      "n_threads": 1,
+      "seconds": [
+        0.2258694750000103,
+        0.13850220700000193,
+        0.17289038299999504
+      ],
+      "median_seconds": 0.17289038299999504,
+      "microseconds_per_particle_step": 1.7289038299999506,
+      "appended_steps": [
+        100000,
+        100000,
+        100000
+      ]
+    },
+    {
+      "workload": "rcm",
+      "shape": [
+        120,
+        240
+      ],
+      "dx": 50.0,
+      "data_sha256": "f22611244ea87af19b86d6659e70aca42ba961a401ff6fd0a5ec94af8b68dad3",
+      "backend": "rust",
+      "particles": 5000,
+      "steps": 20,
+      "repeats": 3,
+      "seed": 0,
+      "n_threads": 1,
+      "seconds": [
+        0.21160902200000464,
+        0.17753656799999362,
+        0.22767314499999713
+      ],
+      "median_seconds": 0.21160902200000464,
+      "microseconds_per_particle_step": 2.1160902200000464,
+      "appended_steps": [
+        100000,
+        100000,
+        100000
+      ]
+    },
+    {
+      "workload": "anuga",
+      "shape": [
+        100,
+        100
+      ],
+      "dx": 10.0,
+      "data_sha256": "d558513c1e9d5d8f0ab070a07cc0a8e259cdaa4df532f35bf816b1b1b5a49ce4",
+      "backend": "python",
+      "particles": 500,
+      "steps": 50,
+      "repeats": 3,
+      "seed": 0,
+      "n_threads": 1,
+      "seconds": [
+        0.38484982299999615,
+        0.3836302539999963,
+        0.37704653999999493
+      ],
+      "median_seconds": 0.3836302539999963,
+      "microseconds_per_particle_step": 15.345210159999851,
+      "appended_steps": [
+        25000,
+        25000,
+        25000
+      ]
+    },
+    {
+      "workload": "anuga",
+      "shape": [
+        100,
+        100
+      ],
+      "dx": 10.0,
+      "data_sha256": "d558513c1e9d5d8f0ab070a07cc0a8e259cdaa4df532f35bf816b1b1b5a49ce4",
+      "backend": "numpy",
+      "particles": 500,
+      "steps": 50,
+      "repeats": 3,
+      "seed": 0,
+      "n_threads": 1,
+      "seconds": [
+        0.04064531100000579,
+        0.040375568999991174,
+        0.04023163499999782
+      ],
+      "median_seconds": 0.040375568999991174,
+      "microseconds_per_particle_step": 1.6150227599996467,
+      "appended_steps": [
+        25000,
+        25000,
+        25000
+      ]
+    },
+    {
+      "workload": "anuga",
+      "shape": [
+        100,
+        100
+      ],
+      "dx": 10.0,
+      "data_sha256": "d558513c1e9d5d8f0ab070a07cc0a8e259cdaa4df532f35bf816b1b1b5a49ce4",
+      "backend": "rust",
+      "particles": 500,
+      "steps": 50,
+      "repeats": 3,
+      "seed": 0,
+      "n_threads": 1,
+      "seconds": [
+        0.042884736000004864,
+        0.042461466000006,
+        0.044422226999998315
+      ],
+      "median_seconds": 0.042884736000004864,
+      "microseconds_per_particle_step": 1.7153894400001946,
+      "appended_steps": [
+        25000,
+        25000,
+        25000
+      ]
+    },
+    {
+      "workload": "anuga",
+      "shape": [
+        100,
+        100
+      ],
+      "dx": 10.0,
+      "data_sha256": "d558513c1e9d5d8f0ab070a07cc0a8e259cdaa4df532f35bf816b1b1b5a49ce4",
+      "backend": "python",
+      "particles": 2500,
+      "steps": 50,
+      "repeats": 3,
+      "seed": 0,
+      "n_threads": 1,
+      "seconds": [
+        2.029096796999994,
+        1.976854184000004,
+        1.8868242220000013
+      ],
+      "median_seconds": 1.976854184000004,
+      "microseconds_per_particle_step": 15.814833472000032,
+      "appended_steps": [
+        125000,
+        125000,
+        125000
+      ]
+    },
+    {
+      "workload": "anuga",
+      "shape": [
+        100,
+        100
+      ],
+      "dx": 10.0,
+      "data_sha256": "d558513c1e9d5d8f0ab070a07cc0a8e259cdaa4df532f35bf816b1b1b5a49ce4",
+      "backend": "numpy",
+      "particles": 2500,
+      "steps": 50,
+      "repeats": 3,
+      "seed": 0,
+      "n_threads": 1,
+      "seconds": [
+        0.18739432300000658,
+        0.21748618399999486,
+        0.2107881660000146
+      ],
+      "median_seconds": 0.2107881660000146,
+      "microseconds_per_particle_step": 1.6863053280001168,
+      "appended_steps": [
+        125000,
+        125000,
+        125000
+      ]
+    },
+    {
+      "workload": "anuga",
+      "shape": [
+        100,
+        100
+      ],
+      "dx": 10.0,
+      "data_sha256": "d558513c1e9d5d8f0ab070a07cc0a8e259cdaa4df532f35bf816b1b1b5a49ce4",
+      "backend": "rust",
+      "particles": 2500,
+      "steps": 50,
+      "repeats": 3,
+      "seed": 0,
+      "n_threads": 1,
+      "seconds": [
+        0.24031691100000785,
+        0.23848377100000562,
+        0.20746999899998286
+      ],
+      "median_seconds": 0.23848377100000562,
+      "microseconds_per_particle_step": 1.907870168000045,
+      "appended_steps": [
+        125000,
+        125000,
+        125000
+      ]
+    },
+    {
+      "workload": "anuga",
+      "shape": [
+        100,
+        100
+      ],
+      "dx": 10.0,
+      "data_sha256": "d558513c1e9d5d8f0ab070a07cc0a8e259cdaa4df532f35bf816b1b1b5a49ce4",
+      "backend": "python",
+      "particles": 5000,
+      "steps": 50,
+      "repeats": 3,
+      "seed": 0,
+      "n_threads": 1,
+      "seconds": [
+        3.8755200169999853,
+        3.8837856289999877,
+        4.036911191999991
+      ],
+      "median_seconds": 3.8837856289999877,
+      "microseconds_per_particle_step": 15.53514251599995,
+      "appended_steps": [
+        250000,
+        250000,
+        250000
+      ]
+    },
+    {
+      "workload": "anuga",
+      "shape": [
+        100,
+        100
+      ],
+      "dx": 10.0,
+      "data_sha256": "d558513c1e9d5d8f0ab070a07cc0a8e259cdaa4df532f35bf816b1b1b5a49ce4",
+      "backend": "numpy",
+      "particles": 5000,
+      "steps": 50,
+      "repeats": 3,
+      "seed": 0,
+      "n_threads": 1,
+      "seconds": [
+        0.4044856060000086,
+        0.40987371100001724,
+        0.42925089000002004
+      ],
+      "median_seconds": 0.40987371100001724,
+      "microseconds_per_particle_step": 1.639494844000069,
+      "appended_steps": [
+        250000,
+        250000,
+        250000
+      ]
+    },
+    {
+      "workload": "anuga",
+      "shape": [
+        100,
+        100
+      ],
+      "dx": 10.0,
+      "data_sha256": "d558513c1e9d5d8f0ab070a07cc0a8e259cdaa4df532f35bf816b1b1b5a49ce4",
+      "backend": "rust",
+      "particles": 5000,
+      "steps": 50,
+      "repeats": 3,
+      "seed": 0,
+      "n_threads": 1,
+      "seconds": [
+        0.48263172099998997,
+        0.4935390360000156,
+        0.48502117099999964
+      ],
+      "median_seconds": 0.48502117099999964,
+      "microseconds_per_particle_step": 1.9400846839999986,
+      "appended_steps": [
+        250000,
+        250000,
+        250000
+      ]
+    }
+  ]
+}
