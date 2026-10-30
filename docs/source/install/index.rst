@@ -4,7 +4,11 @@
 Installation Instructions
 =========================
 
-dorado is compatible with Python 3.11+. There are only 4 dependencies: `numpy <https://numpy.org/install/>`_, `matplotlib <https://matplotlib.org/3.2.2/users/installing.html>`_, `scipy <https://www.scipy.org/install.html>`_, `future <https://python-future.org/>`_, and `tqdm <https://pypi.org/project/tqdm/>`_.
+dorado is compatible with Python 3.11+. There are five dependencies: `numpy <https://numpy.org/install/>`_, `matplotlib <https://matplotlib.org/3.2.2/users/installing.html>`_, `scipy <https://www.scipy.org/install.html>`_, `future <https://python-future.org/>`_, and `tqdm <https://pypi.org/project/tqdm/>`_.
+
+.. note::
+
+   The distributions published on PyPI and conda-forge track the upstream `passaH2O/dorado <https://github.com/passaH2O/dorado>`_ project's releases. To run the current state of the `jay-kestrel/dorado <https://github.com/jay-kestrel/dorado>`_ fork, install from source as described below.
 
 Installation via `pip`
 ----------------------
@@ -28,14 +32,14 @@ Installation from source
 1. Clone (or download) the repository
 ::
 
-   $ git clone https://github.com/passaH2O/dorado
+   $ git clone https://github.com/jay-kestrel/dorado
 
 2. From the cloned (or extracted) folder, run the following in the command line:
 ::
 
    $ pip install .
 
-to install the dorado package.
+to install the dorado package. Source installs do not require a Rust toolchain: the package builds through maturin, but the optional ``dorado._native`` routing-kernel extension is absent from pure-Python source builds and ships in the maturin-built wheels instead; ``import dorado`` works either way.
 
 3. You can test your installation using `pytest`. To do this, first install pytest by running the following from the command line:
 ::
