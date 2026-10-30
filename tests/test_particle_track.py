@@ -1249,3 +1249,54 @@ def test_over_limit_warning_message(caplog):
     assert len(over_limit) == 1
     assert over_limit[0].getMessage().startswith("1 particles exceeded")
 
+
+
+# ---- Exception diagnostics -------------------------------------------
+# Chained re-raises: the original cause must survive on __cause__, and the
+# exception type/message must stay what they were before chaining.
+
+def test_depth_re_raise_chains_cause():
+    # a depth array without .copy() triggers the AttributeError that the
+    # except block converts to ValueError; the cause must survive
+    bad = copy.deepcopy(goodparams)
+    bad.depth = 5  # int has no .copy() -- re-raise path, not a None guard
+    with pytest.raises(ValueError) as excinfo:
+        particle_track.Particles(bad)
+    assert excinfo.value.__cause__ is not None
+    assert "Water depth array incorrectly defined." in str(excinfo.value)
+
+
+def test_gen_input_check_chains_cause():
+    # Np_tracer that int() cannot coerce trips the chained TypeError
+    with pytest.raises(TypeError) as excinfo:
+        particle_track.gen_input_check(object(), [1], [1], 0.0, 'random')
+    assert excinfo.value.__cause__ is not None
+    assert "Np_tracer input type was not int." in str(excinfo.value)
+
+
+def test_stranding_re_raise_chains_cause():
+    # narrow (TypeError, ValueError) blocks chain too
+    bad = copy.deepcopy(goodparams)
+    bad.rest_time = 'not-a-number'
+    with pytest.raises(ValueError) as excinfo:
+        particle_track.check_stranding_params(bad)
+    assert excinfo.value.__cause__ is not None
+
+
+# Default-parameter substitution: omitting each D8 geometry parameter
+# must emit one info record naming the parameter
+
+def test_default_parameter_info_records(caplog):
+    minimal = pobj()
+    minimal.dx = 1
+    minimal.depth = np.ones((3, 3))
+    minimal.stage = np.ones((3, 3))
+    minimal.qx = np.zeros((3, 3))
+    minimal.qy = np.ones((3, 3))
+    minimal.model = 'DeltaRCM'
+    with caplog.at_level(logging.INFO, logger="dorado"):
+        particle_track.Particles(minimal)
+    text = caplog.text
+    for name in ['distances', 'ivec', 'jvec', 'iwalk', 'jwalk', 'angles']:
+        assert "params.%s not provided" % name in text
+

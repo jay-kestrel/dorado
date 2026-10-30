@@ -203,9 +203,9 @@ def check_stranding_params(params):
         rest_time = 0.0
     try:
         rest_time = float(rest_time)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError) as exc:
         raise ValueError("rest_time must be a number >= 0, got: "
-                         + str(rest_time))
+                         + str(rest_time)) from exc
     if np.isnan(rest_time) or rest_time < 0:
         raise ValueError("rest_time must be >= 0, got: "
                          + str(rest_time))
@@ -215,9 +215,9 @@ def check_stranding_params(params):
         entrain_prob = 1.0
     try:
         entrain_prob = float(entrain_prob)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError) as exc:
         raise ValueError("entrain_prob must be a number in (0, 1], got: "
-                         + str(entrain_prob))
+                         + str(entrain_prob)) from exc
     if np.isnan(entrain_prob) or not (0 < entrain_prob <= 1):
         raise ValueError("entrain_prob must be in (0, 1], got: "
                          + str(entrain_prob))
@@ -227,9 +227,9 @@ def check_stranding_params(params):
         stranding_dt = 1.0
     try:
         stranding_dt = float(stranding_dt)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError) as exc:
         raise ValueError("stranding_dt must be a number > 0, got: "
-                         + str(stranding_dt))
+                         + str(stranding_dt)) from exc
     if np.isnan(stranding_dt) or stranding_dt <= 0:
         raise ValueError("stranding_dt must be > 0, got: "
                          + str(stranding_dt))
@@ -282,8 +282,9 @@ class Particles():
                 # caller's array
                 self.depth = params.depth.copy()
                 self.depth[np.isnan(self.depth)] = 0
-            except Exception:
-                raise ValueError("Water depth array incorrectly defined.")
+            except Exception as exc:
+                raise ValueError(
+                    "Water depth array incorrectly defined.") from exc
         elif getattr(params,
                      'stage',
                      None) is not None and getattr(params,
@@ -293,8 +294,9 @@ class Particles():
                 self.depth = params.stage - params.topography
                 self.depth[self.depth < 0] = 0
                 self.depth[np.isnan(self.depth)] = 0
-            except Exception:
-                raise ValueError("Insufficient information: Specify depth")
+            except Exception as exc:
+                raise ValueError(
+                    "Insufficient information: Specify depth") from exc
         else:
             raise ValueError("Insufficient information: Specify depth")
 
@@ -305,8 +307,9 @@ class Particles():
                 # caller's array
                 self.stage = params.stage.copy()
                 self.stage[self.depth == 0] = np.nan
-            except Exception:
-                raise ValueError("Water stage array incorrectly defined.")
+            except Exception as exc:
+                raise ValueError(
+                    "Water stage array incorrectly defined.") from exc
         elif getattr(params,
                      'topography',
                      None) is not None and getattr(params,
@@ -315,8 +318,9 @@ class Particles():
             try:
                 self.stage = params.topography + params.depth
                 self.stage[self.depth == 0] = np.nan
-            except Exception:
-                raise ValueError("Insufficient information: Specify stage")
+            except Exception as exc:
+                raise ValueError(
+                    "Insufficient information: Specify stage") from exc
         else:
             raise ValueError("Insufficient information: Specify stage")
 
@@ -1154,24 +1158,24 @@ def gen_input_check(Np_tracer, seed_xloc, seed_yloc, seed_time, method):
     """
     try:
         Np_tracer = int(Np_tracer)
-    except Exception:
-        raise TypeError("Np_tracer input type was not int.")
+    except Exception as exc:
+        raise TypeError("Np_tracer input type was not int.") from exc
     try:
         # try to flatten if this is an array that is multi-dimensional
         if len(np.shape(seed_xloc)) > 1:
             seed_xloc = seed_xloc.flatten()
         # try to coerce into a list
         seed_xloc = [int(x) for x in list(seed_xloc)]
-    except Exception:
-        raise TypeError("seed_xloc input type was not a list.")
+    except Exception as exc:
+        raise TypeError("seed_xloc input type was not a list.") from exc
     try:
         # try to flatten if this is an array that is multi-dimensional
         if len(np.shape(seed_yloc)) > 1:
             seed_yloc = seed_yloc.flatten()
         # try to coerce into a list
         seed_yloc = [int(y) for y in list(seed_yloc)]
-    except Exception:
-        raise TypeError("seed_yloc input type was not a list.")
+    except Exception as exc:
+        raise TypeError("seed_yloc input type was not a list.") from exc
     if (isinstance(seed_time, float) is False) and \
       (isinstance(seed_time, int) is False):
         raise TypeError('seed_time provided was not a float or int')
@@ -1246,10 +1250,10 @@ def validate_particle_attributes(Np_tracer, particle_size, particle_type):
     else:
         try:
             size_value = float(particle_size)
-        except (TypeError, ValueError):
+        except (TypeError, ValueError) as exc:
             raise ValueError('particle_size must be a number, a list/'
                              'array of length Np_tracer, or None, got: '
-                             + repr(particle_size))
+                             + repr(particle_size)) from exc
         sizes = [size_value]*Np_tracer
     for s in sizes:
         if s is not None and s <= 0:
