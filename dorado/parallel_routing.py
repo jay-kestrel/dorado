@@ -38,7 +38,9 @@ def run_iter(pobj):
 
     """
     pobj.particles.generate_particles(pobj.Np_tracer, pobj.seed_xloc,
-                                      pobj.seed_yloc)
+                                      pobj.seed_yloc,
+                                      particle_size=pobj.particle_size,
+                                      particle_type=pobj.particle_type)
     # do iterations
     for i in list(range(0, pobj.num_iter)):
         all_walk = pobj.particles.run_iteration()
@@ -90,10 +92,12 @@ class parallel_obj:
         parallel_obj.Np_tracer = None
         parallel_obj.seed_xloc = None
         parallel_obj.seed_yloc = None
+        parallel_obj.particle_size = None
+        parallel_obj.particle_type = None
 
 
 def parallel_routing(particles, num_iter, Np_tracer, seed_xloc, seed_yloc,
-                     num_cores):
+                     num_cores, particle_size=None, particle_type=None):
     """Do the parallel routing of particles.
 
     Function to do parallel routing of particles. Does this by duplicating the
@@ -122,6 +126,22 @@ def parallel_routing(particles, num_iter, Np_tracer, seed_xloc, seed_yloc,
         num_cores : `int`
             Number of processors/cores to use for parallel part
 
+        particle_size : `float`, `int`, `list`, `numpy.ndarray`, optional
+            Size attribute to assign to the newly generated particles in
+            each parallel process, with the same semantics as the
+            particle_size argument of
+            :obj:`dorado.particle_track.generate_particles` (a single value
+            applied to all Np_tracer particles, or a list/array of length
+            Np_tracer). The default value is None (no sizes).
+
+        particle_type : `str`, `list`, optional
+            Name of the particle kind to assign to the newly generated
+            particles in each parallel process, with the same semantics as
+            the particle_type argument of
+            :obj:`dorado.particle_track.generate_particles` (a single name
+            applied to all Np_tracer particles, or a list of names of
+            length Np_tracer). The default value is None (no types).
+
     **Outputs** :
 
         par_result : `list`
@@ -136,6 +156,8 @@ def parallel_routing(particles, num_iter, Np_tracer, seed_xloc, seed_yloc,
     pobj.Np_tracer = Np_tracer
     pobj.seed_xloc = seed_xloc
     pobj.seed_yloc = seed_yloc
+    pobj.particle_size = particle_size
+    pobj.particle_type = particle_type
 
     # define list to pass to actual function that will be mapped to in parallel
     p_list = [pobj] * num_cores
