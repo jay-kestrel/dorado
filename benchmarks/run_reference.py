@@ -62,7 +62,10 @@ def run_reference(params: modelParams, seed: int, particles: int, iterations: in
                   seed_x: list[int], seed_y: list[int]) -> tuple[dict, float]:
     """Timed region: init derivation, particle seeding, and all iterations."""
     start = time.perf_counter()
-    particle = Particles(params)
+    # the reference runner measures the python backend by definition
+    # (metadata["implementation"] == "python"); construct it explicitly so
+    # the backend default flip never changes what this measures
+    particle = Particles(params, backend="python")
     np.random.seed(seed)
     particle.generate_particles(particles, seed_x, seed_y)
     walk_data = None

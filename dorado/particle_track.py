@@ -11,6 +11,7 @@ Project Homepage: https://github.com/passaH2O/dorado
 from __future__ import division, print_function, absolute_import
 from builtins import range
 from math import pi
+import os
 import numpy as np
 from tqdm import tqdm
 import dorado.lagrangian_walker as lw
@@ -241,6 +242,250 @@ def check_stranding_params(params):
             'stranding_dt': stranding_dt}
 
 
+# Valid routing backends. 'rust' routes iterations through the native
+# kernel (dorado._native, per-particle ChaCha8 streams); 'python' always
+# runs the retained NumPy walker verbatim (legacy np.random global stream).
+VALID_BACKENDS = ('rust', 'python')
+
+
+def _resolve_backend(backend):
+    """Resolve the effective routing backend for a new Particles object.
+
+    The DORADO_BACKEND environment variable overrides the constructor
+    argument so CI can A/B backends without touching call sites. Invalid
+    values raise a ValueError whichever path carries them.
+    """
+    env_backend = os.environ.get('DORADO_BACKEND')
+    if env_backend is not None:
+        if env_backend not in VALID_BACKENDS:
+            raise ValueError('DORADO_BACKEND must be one of '
+                             + ', '.join(VALID_BACKENDS)
+                             + ', got: ' + repr(env_backend))
+        backend = env_backend
+    if backend not in VALID_BACKENDS:
+        raise ValueError('backend must be one of '
+                         + ', '.join(VALID_BACKENDS)
+                         + ', got: ' + repr(backend))
+    return backend
+
+
+def _validate_seed(seed):
+    """Validate the optional per-particle stream seed (None or a uint64)."""
+    if seed is None:
+        return None
+    try:
+        seed = int(seed)
+    except (TypeError, ValueError):
+        raise ValueError('seed must be None or an integer, got: '
+                         + repr(seed))
+    if not 0 <= seed < 2**64:
+        raise ValueError('seed must be in [0, 2**64) for the native '
+                         'per-particle streams, got: ' + str(seed))
+    return seed
+
+
+def _validate_n_threads(n_threads):
+    """Validate the within-walk parallelism thread count."""
+    try:
+        n_threads = int(n_threads)
+    except (TypeError, ValueError):
+        raise ValueError('n_threads must be an integer, got: '
+                         + repr(n_threads))
+    # matches the native kernel's own validation (rust/src/lib.rs)
+    if not 1 <= n_threads <= 256:
+        raise ValueError('n_threads must be in [1, 256], got: '
+                         + str(n_threads))
+    return n_threads
+
+
+def _native_module():
+    """Import the native extension, explaining what to do when absent."""
+    try:
+        import dorado._native as native
+    except ImportError as err:
+        raise ImportError(
+            'The native routing backend requires the dorado._native '
+            'extension module (built with maturin). Install a wheel built '
+            'from this repository, build it with `maturin develop '
+            '--release`, or select the python backend instead '
+            "(Particles(..., backend='python') or DORADO_BACKEND=python)."
+            ) from err
+    return native
+
+
+def _routing_fields(Particles):
+    """Return the immutable native snapshot of the static flow fields.
+
+    Staged once per Particles instance on the first native iteration: the
+    weight field and the arrays it was built from are read-only for the
+    whole run, which is the invariant the kernel is compiled around. Field
+    arrays modified after the first routed iteration are not re-staged.
+    """
+    if Particles._routing_fields is None:
+        native = _native_module()
+        Particles._routing_fields = native.RoutingFields(
+            np.ascontiguousarray(Particles.weight, dtype=np.float64),
+            np.ascontiguousarray(Particles.velocity, dtype=np.float64),
+            np.ascontiguousarray(Particles.velocity_angle, dtype=np.float64),
+            np.ascontiguousarray(Particles.cell_type, dtype=np.int8),
+            np.ascontiguousarray(Particles.depth, dtype=np.float64),
+            np.asarray(Particles.distances, dtype=np.float64).ravel(),
+            np.asarray(Particles.iwalk, dtype=np.int64).ravel(),
+            np.asarray(Particles.jwalk, dtype=np.int64).ravel(),
+            np.asarray(Particles.angles, dtype=np.float64).ravel(),
+            Particles.dx, Particles.diff_coeff,
+            steepest_descent=bool(Particles.steepest_descent),
+            stranding_handling=Particles.stranding_handling,
+            dry_depth=float(Particles.dry_depth),
+            stranding_dt=float(Particles.stranding_dt),
+            stranding_release=Particles.stranding_release,
+            rest_time=float(Particles.rest_time),
+            entrain_prob=float(Particles.entrain_prob),
+        )
+    return Particles._routing_fields
+
+
+def _rng_streams(Particles):
+    """Return the persistent per-particle ChaCha8 stream set.
+
+    Created once per Particles instance: streams are indexed by stable
+    particle id and persist across iterations, so a fixed seed gives a
+    walk reproducible for that instance independent of thread count, and
+    seed=None means fresh OS entropy was drawn for the instance.
+    """
+    if Particles._rng_streams is None:
+        native = _native_module()
+        Particles._rng_streams = native.RngStreams(Particles.seed)
+    return Particles._rng_streams
+
+
+def _native_particle_state(Particles, count, start_optional):
+    """Assemble the native [deposited, stranded, stranded_time] buffer.
+
+    These flags persist across iterations through walk_data: the
+    run_iteration bookkeeping appends a row for every recorded step and
+    rewrites the last entry when a deposition flip lands without one, so
+    reading the most recent entries reproduces the kernel's buffers at
+    the start of every iteration.
+    """
+    state = np.zeros((count, 3), dtype=np.float64)
+    for var, column in (('deposited', 0), ('stranded', 1),
+                        ('stranded_time', 2)):
+        values = start_optional.get(var)
+        if values is None:
+            continue
+        for i in range(count):
+            if values[i] is not None:
+                state[i, column] = float(values[i])
+    return state
+
+
+def _native_behavior(Particles, count, start_optional):
+    """Return the (N, 3) transport-multiplier array, or None for tracers.
+
+    Mirrors the per-particle multipliers the Python walker derives from
+    particle_size/particle_type; entries of a merged batch without an
+    attribute resolve to the defaults, exactly as in lagrangian_walker.
+    """
+    sizes = start_optional.get('particle_size')
+    types = start_optional.get('particle_type')
+    deposited = start_optional.get('deposited')
+    if sizes is None and types is None and deposited is None:
+        return None
+    if sizes is None:
+        sizes = [None] * count
+    if types is None:
+        types = [None] * count
+    multipliers = [lw.effective_multipliers(size, kind)
+                   for size, kind in zip(sizes, types)]
+    return np.asarray(multipliers, dtype=np.float64).reshape(count, 3)
+
+
+def _native_step_optional(Particles, new_inds, state, start_optional,
+                          deposited_tracked):
+    """Sample tracked variables at the stepped positions (one iteration).
+
+    Same sampling policy as lagrangian_walker.particle_stepper: grid
+    variables are read at the new cell, roi_flag follows roi_grid,
+    persistent per-particle attributes pass through unchanged, and under
+    'park' the stranding state rides the optional-variable channel.
+    """
+    updated = {}
+    count = len(new_inds)
+    if deposited_tracked:
+        updated['deposited'] = [int(state[i, 0]) for i in range(count)]
+    if Particles.roi_grid is not None:
+        updated['roi_flag'] = [1 if Particles.roi_grid[x, y] == 1 else 0
+                               for x, y in new_inds]
+    for var in start_optional:
+        if var in updated:
+            continue
+        if var in Particles.available_particle_vars:
+            grid = Particles.available_particle_vars[var]
+            updated[var] = [grid[x, y] for x, y in new_inds]
+        else:
+            # persistent per-particle attributes (particle_size,
+            # particle_type) and any unrecognized keys pass through
+            # unchanged so callers can append them rather than raising
+            updated[var] = list(start_optional[var])
+    if Particles.stranding_handling == 'park':
+        updated['stranded'] = [int(state[i, 1]) for i in range(count)]
+        updated['stranded_time'] = [float(state[i, 2]) for i in range(count)]
+    return updated
+
+
+def _native_step_particles(Particles, current_inds, travel_times,
+                           start_optional):
+    """Step all particles one iteration through the native kernel.
+
+    Native counterpart of lagrangian_walker.particle_stepper with the
+    same inputs and outputs, so run_iteration's walk-data bookkeeping
+    applies to either backend unchanged.
+    """
+    native = _native_module()
+    count = len(current_inds)
+    positions = np.asarray(current_inds, dtype=np.int64).reshape(-1, 2)
+    times = np.asarray(travel_times, dtype=np.float64).reshape(-1)
+    state = _native_particle_state(Particles, count, start_optional)
+    behavior = _native_behavior(Particles, count, start_optional)
+    # target_time None: the kernel takes exactly one step per particle and
+    # the record policy lives in its result flags; max_iter does not apply
+    native.step_particles(_routing_fields(Particles), positions, times,
+                          state, _rng_streams(Particles),
+                          behavior=behavior, n_threads=Particles.n_threads,
+                          max_iter=1)
+    deposited_tracked = (start_optional.get('particle_size') is not None
+                         or start_optional.get('particle_type') is not None
+                         or start_optional.get('deposited') is not None)
+    new_inds = positions.tolist()
+    updated_optional = _native_step_optional(Particles, new_inds, state,
+                                             start_optional,
+                                             deposited_tracked)
+    return new_inds, times.tolist(), updated_optional
+
+
+def _native_row_value(Particles, var, x, y, deposited, stranded,
+                      stranded_time, start_value):
+    """Value appended to one tracked-variable history for a sub-step row.
+
+    History rows carry (x, y, time, deposited, stranded, stranded_time);
+    grid variables are resampled at the row's cell, the stranding channel
+    and deposited flag read the row, and persistent per-particle
+    attributes pass through their carried value.
+    """
+    if var == 'deposited':
+        return int(deposited)
+    if var == 'stranded':
+        return int(stranded)
+    if var == 'stranded_time':
+        return float(stranded_time)
+    if var == 'roi_flag' and Particles.roi_grid is not None:
+        return 1 if Particles.roi_grid[x, y] == 1 else 0
+    if var in Particles.available_particle_vars:
+        return Particles.available_particle_vars[var][x, y]
+    return start_value
+
+
 class Particles():
     """Class for the particle(s) that is(are) going to be routed.
 
@@ -249,9 +494,16 @@ class Particles():
     their transport behavior (travel time, diffusion, deposition) and are
     persisted in walk_data; without them all particles behave as
     identical passive tracers.
+
+    Routing runs on one of two backends (see :obj:`__init__`): the native
+    kernel (:obj:`dorado._native`, the default) or the retained Python
+    walker. The backend changes only the engine that performs the walk —
+    the public API, walk_data structure, and scientific semantics are
+    identical; the random streams are not (see the RNG contract in the
+    ``backend`` parameter documentation).
     """
 
-    def __init__(self, params):
+    def __init__(self, params, backend='rust', seed=None, n_threads=1):
         """Check input parameters and assign default values where/if needed.
 
         Methods require a class of parameters
@@ -262,10 +514,59 @@ class Particles():
         otherwise an error is raised or default values are assigned when
         possible/sensible
 
+        **Inputs** :
+
+            params : :obj:`dorado.particle_track.modelParams`
+                A :obj:`dorado.particle_track.modelParams` object with
+                required and optional model parameters.
+
+            backend : `str`, optional
+                Routing engine: ``'rust'`` (default) steps particles
+                through the native kernel (:obj:`dorado._native`); the
+                value must be one of
+                :obj:`dorado.particle_track.VALID_BACKENDS`. ``'python'``
+                runs the NumPy walker in :obj:`dorado.lagrangian_walker`
+                verbatim and ignores ``seed`` and ``n_threads``. The
+                ``DORADO_BACKEND`` environment variable overrides this
+                argument (for CI A/B runs without touching call sites).
+                **RNG contract:** the native kernel draws from independent
+                per-particle ChaCha8 streams seeded by ``seed``; it
+                intentionally does NOT reproduce the NumPy MT19937 global
+                stream, so trajectories from ``backend='rust'`` are NOT
+                reproducible with ``np.random.seed`` — walks are
+                reproducible through ``seed`` instead, and are
+                statistically equivalent to the reference walk. The
+                Python backend keeps the legacy contract: seeded via
+                ``np.random.seed`` before generating/routing particles.
+
+            seed : `int` or `None`, optional
+                Seed for the native per-particle streams. `None` (default)
+                draws fresh OS entropy once per Particles instance; an
+                integer in ``[0, 2**64)`` makes the instance's walk
+                reproducible — identical ``walk_data`` for the same seed,
+                particle count, and iteration sequence, independent of
+                ``n_threads``. Ignored by the Python backend.
+
+            n_threads : `int`, optional
+                Number of threads used inside a walk by the native kernel
+                (Rayon across particles; results are identical for any
+                thread count). Default 1. Must be in ``[1, 256]``. Ignored
+                by the Python backend.
+
         """
         # verbose on params is deprecated - use dorado.setup_logging() instead
         if getattr(params, 'verbose', None) is not None:
             handle_verbose_deprecation(params.verbose)
+
+        # ROUTING BACKEND #
+        # resolve and store the backend selection before field validation
+        # so a typo fails fast; the native snapshot and stream set are
+        # staged lazily on the first routed iteration
+        self.backend = _resolve_backend(backend)
+        self.seed = _validate_seed(seed)
+        self.n_threads = _validate_n_threads(n_threads)
+        self._routing_fields = None
+        self._rng_streams = None
 
         # REQUIRED PARAMETERS #
         # Define the length along one cell face (assuming square cells)
@@ -615,6 +916,18 @@ class Particles():
         """Manually reset self.walk_data back to None."""
         self.walk_data = None
 
+    def reseed(self, seed):
+        """Reset the native per-particle streams from a new seed.
+
+        The cached stream set is discarded; the next routing call
+        rebuilds it from ``seed`` (a ``None`` seed draws fresh entropy).
+        A no-op on the Python backend, which draws from the caller-
+        seeded global NumPy state instead.
+        """
+        if self.backend == 'rust':
+            self.seed = seed
+            self._rng_streams = None
+
     # generate a group of particles in a set of initial locations
     def generate_particles(self,
                            Np_tracer,
@@ -914,6 +1227,63 @@ class Particles():
     # run an iteration where particles are moved
     # have option of specifying the particle start locations
     # otherwise they are randomly placed within x and y seed locations
+    def _step_particles(self, start_pairs, start_times, start_optional):
+        """Step all particles one iteration through the selected backend.
+
+        Returns (new_inds, travel_times, updated_optional) with identical
+        shapes from either backend; the run_iteration bookkeeping that
+        appends the results to walk_data is shared verbatim.
+        """
+        if self.backend == 'python':
+            return lw.particle_stepper(self, start_pairs, start_times,
+                                       start_optional)
+        return _native_step_particles(self, start_pairs, start_times,
+                                      start_optional)
+
+    def _run_target_time_native(self, all_xinds, all_yinds, all_times,
+                                optional_vars, start_optional, target_time,
+                                max_iter):
+        """Route every particle to target_time in one native kernel call.
+
+        Replaces run_iteration's per-particle adaptive sub-stepping loop:
+        the kernel applies the same boundary skip, estimate update,
+        iteration cap, and record policy per particle (routing::advance),
+        then returns each particle's appended sub-step history. Returns
+        the indices of the particles that hit the iteration cap.
+        """
+        native = _native_module()
+        positions = np.asarray([[all_xinds[i][-1], all_yinds[i][-1]]
+                                for i in range(self.Np_tracer)],
+                               dtype=np.int64).reshape(-1, 2)
+        times = np.asarray([all_times[i][-1]
+                            for i in range(self.Np_tracer)],
+                           dtype=np.float64).reshape(-1)
+        state = _native_particle_state(self, self.Np_tracer, start_optional)
+        behavior = _native_behavior(self, self.Np_tracer, start_optional)
+        # seed each particle's adaptive loop with its last observed
+        # timestep, or 0.1 before a first estimate exists
+        estimates = np.asarray(
+            [all_times[i][-1] - all_times[i][-2]
+             if len(all_times[i]) > 1 else 0.1
+             for i in range(self.Np_tracer)],
+            dtype=np.float64).reshape(-1)
+        result = native.step_particles(
+            _routing_fields(self), positions, times, state,
+            _rng_streams(self), behavior=behavior,
+            n_threads=self.n_threads, target_time=float(target_time),
+            est_next_dt=estimates, max_iter=int(max_iter))
+        for i, history in enumerate(result.histories):
+            for (x, y, time, deposited, stranded, stranded_time) in history:
+                all_xinds[i].append(int(x))
+                all_yinds[i].append(int(y))
+                all_times[i].append(float(time))
+                for var in optional_vars:
+                    optional_vars[var][i].append(
+                        _native_row_value(self, var, x, y, deposited,
+                                          stranded, stranded_time,
+                                          start_optional[var][i]))
+        return [i for i, hit in enumerate(result.hit_max_iter) if hit]
+
     def run_iteration(self, target_time=None, max_iter=1e4):
         """Run an iteration of the particle routing.
 
@@ -998,8 +1368,10 @@ class Particles():
         # Do the particle movement
         if target_time is None:
             # If we're not aiming for a specific time, step the particles
-            new_inds, travel_times, updated_optional = lw.particle_stepper(self, start_pairs,
-                                                         start_times, start_optional)
+            # through the selected backend; the walk-data bookkeeping below
+            # is shared verbatim for either engine
+            new_inds, travel_times, updated_optional = \
+                self._step_particles(start_pairs, start_times, start_optional)
 
             for ii in list(range(self.Np_tracer)):
                 # Don't duplicate location if the particle is standing
@@ -1037,58 +1409,67 @@ class Particles():
             # once for all particles, not re-initialized per particle)
             _iter_particles = []
 
-            # Loop through all particles
-            for ii in list(range(self.Np_tracer)):
-                if len(all_times[ii]) > 1:
-                    est_next_dt = all_times[ii][-1] - all_times[ii][-2]
-                else:
-                    # Initialize a guess for the next iteration's timestep
-                    est_next_dt = 0.1
-                count = 1
+            if self.backend == 'rust':
+                # the native kernel runs the same adaptive sub-stepping
+                # loop for the whole batch in one call (routing::advance
+                # applies the same boundary skip, estimate update,
+                # iteration cap, and record policy per particle)
+                _iter_particles = self._run_target_time_native(
+                    all_xinds, all_yinds, all_times, optional_vars,
+                    start_optional, target_time, max_iter)
+            else:
+                # Loop through all particles
+                for ii in list(range(self.Np_tracer)):
+                    if len(all_times[ii]) > 1:
+                        est_next_dt = all_times[ii][-1] - all_times[ii][-2]
+                    else:
+                        # Initialize a guess for the next iteration's timestep
+                        est_next_dt = 0.1
+                    count = 1
 
-                # Only iterate if this particle isn't already at a boundary:
-                # (lower slice bounds clamped at 0 as in check_for_boundary)
-                if -1 not in self.cell_type[max(0, all_xinds[ii][-1]-1):
-                                            all_xinds[ii][-1]+2,
-                                            max(0, all_yinds[ii][-1]-1):
-                                            all_yinds[ii][-1]+2]:
-                    # Loop until |target time - current time| <
-                    #            |target time - estimated next time|
-                    while abs(all_times[ii][-1] - target_time) >= \
-                          abs(all_times[ii][-1] + est_next_dt - target_time):
-                        # for particle ii, take a step from most recent index
-                        new_inds, travel_times, updated_optional = lw.particle_stepper(self, [[all_xinds[ii][-1], all_yinds[ii][-1]]],[all_times[ii][-1]],
-                                                                                       {var: [optional_vars[var][ii][-1]] for var in optional_vars})
-                
-                        # Don't duplicate location if the particle is
-                        # standing still at a boundary, unless it is
-                        # parked this step -- parked steps are recorded
-                        # so that strand durations are measurable
-                        parked = ('stranded' in updated_optional
-                                  and updated_optional['stranded'][0] == 1)
-                        if new_inds[0] != [all_xinds[ii][-1],
-                                           all_yinds[ii][-1]] or parked:
-                            all_xinds[ii].append(new_inds[0][0])
-                            all_yinds[ii].append(new_inds[0][1])
-                            all_times[ii].append(travel_times[0])
-                            for var in optional_vars:
-                                optional_vars[var][ii].append(updated_optional[var][0])
-                        else:
-                            if 'deposited' in optional_vars:
-                                # persist a deposition flip for a particle
-                                # that settled (and so stopped moving)
-                                optional_vars['deposited'][ii][-1] = \
-                                    updated_optional['deposited'][0]
-                            break
+                    # Only iterate if this particle isn't already at a boundary:
+                    # (lower slice bounds clamped at 0 as in check_for_boundary)
+                    if -1 not in self.cell_type[max(0, all_xinds[ii][-1]-1):
+                                                all_xinds[ii][-1]+2,
+                                                max(0, all_yinds[ii][-1]-1):
+                                                all_yinds[ii][-1]+2]:
+                        # Loop until |target time - current time| <
+                        #            |target time - estimated next time|
+                        while abs(all_times[ii][-1] - target_time) >= \
+                              abs(all_times[ii][-1] + est_next_dt - target_time):
+                            # for particle ii, take a step from most recent index
+                            new_inds, travel_times, updated_optional = lw.particle_stepper(self, [[all_xinds[ii][-1], all_yinds[ii][-1]]],[all_times[ii][-1]],
+                                                                                           {var: [optional_vars[var][ii][-1]] for var in optional_vars})
 
-                        # Use that timestep to estimate how long the
-                        # next one will take
-                        est_next_dt = max(0.1, all_times[ii][-1] -
-                                          all_times[ii][-2])
-                        count += 1
-                        if count > max_iter:
-                            _iter_particles.append(ii)
-                            break
+                            # Don't duplicate location if the particle is
+                            # standing still at a boundary, unless it is
+                            # parked this step -- parked steps are recorded
+                            # so that strand durations are measurable
+                            parked = ('stranded' in updated_optional
+                                      and updated_optional['stranded'][0] == 1)
+                            if new_inds[0] != [all_xinds[ii][-1],
+                                               all_yinds[ii][-1]] or parked:
+                                all_xinds[ii].append(new_inds[0][0])
+                                all_yinds[ii].append(new_inds[0][1])
+                                all_times[ii].append(travel_times[0])
+                                for var in optional_vars:
+                                    optional_vars[var][ii].append(updated_optional[var][0])
+                            else:
+                                if 'deposited' in optional_vars:
+                                    # persist a deposition flip for a particle
+                                    # that settled (and so stopped moving)
+                                    optional_vars['deposited'][ii][-1] = \
+                                        updated_optional['deposited'][0]
+                                break
+
+                            # Use that timestep to estimate how long the
+                            # next one will take
+                            est_next_dt = max(0.1, all_times[ii][-1] -
+                                              all_times[ii][-2])
+                            count += 1
+                            if count > max_iter:
+                                _iter_particles.append(ii)
+                                break
 
             # Store travel information in all_walk_data
             all_walk_data['xinds'] = all_xinds
