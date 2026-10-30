@@ -1,8 +1,10 @@
 # Native particle stepping
+# Native particle stepping
 
-`dorado._native` contains an opt-in, low-level batched stepper. This crate does
-not yet select a backend in `Particles.run_iteration`; the Python walker and
-public API are unchanged. The backend-switch task will connect this interface.
+`dorado._native` contains an opt-in, low-level batched stepper and a serial
+parity kernel. This crate does not yet select a backend in
+`Particles.run_iteration`; the Python walker and public API are unchanged. The
+backend-switch task will connect this interface.
 
 **Load-bearing assumption:** moving the scalar walk into Rust removes the
 interpreter cost. The end-to-end benchmark gate must still check that Python
@@ -142,6 +144,58 @@ mutated buffers and returned histories. Do not regenerate the existing Python
 fixtures in this kernel-only PR; NumPy's old global stream remains unchanged.
 Statistical ensemble equivalence and full API speedup remain integration gates,
 not claims established by helper parity tests.
+
+## Serial parity kernel and `dorado_rust` driver
+
+The `walker` module additionally provides a serial, NumPy-legacy parity kernel
+that reproduces the reference walker's exact semantics and RNG stream:
+MT19937 with NumPy's legacy double conversion, one draw per
+particle-step (+1 when `diff_coeff > 0`) in list-index order, and two seeding
+draws per particle. `dorado_rust` (a `bin` target, `src/driver.rs`) runs this
+kernel on the benchmark harness's normalized fixture directories — the same
+layout `benchmarks/run_reference.py` consumes — and writes `walk_data.json`
+plus a `timing.json` with the internal compute clock (fixture load and output
+writes excluded).
+
+```sh
+cargo run --release --bin dorado_rust -- \
+  --input bench/fixture_rcm --out /tmp/rust_out
+python benchmarks/run_reference.py --input bench/fixture_rcm \
+  --particles 10000 --iterations 100 --seed 0 --out /tmp/python_ref
+cmp /tmp/python_ref/walk_data.json /tmp/rust_out/walk_data.json  # byte-identical
+```
+
+On the 120×240 normalized fixture (10,000 particles, 100 iterations, seed 0)
+the driver's `walk_data.json` is byte-identical to the Python reference's
+while the timed compute drops from ≈21.7 s to ≈0.22 s on the same sandbox.
+
+### Parity quirks (replicated, not fixed)
+
+These reference behaviors are mirrored exactly in the parity kernel so the
+golden gates stay meaningful; fixing them belongs to the Python repos as
+follow-on work:
+
+- **parity quirk — negative-slice boundary wrap:** `check_for_boundary`
+  (`lagrangian_walker.py`) slices neighborhoods with negative indices near the
+  lower edge; since the upstream slice-clamp fix the wrap is clamped instead of
+  wrapping to the far edge. The kernel replicates the clamped behavior.
+- **parity quirk — `steepest_descent` mutates the shared weight raster:** the
+  reference's `steep_descent` writes exclusion zeros into `Particles.weight`;
+  the kernel reproduces the mutation and its persistence across steps.
+- **parity quirk — all-zero cutoff rows resolve to index 0 (NW):** when a
+  weight row's cumulative sum never exceeds the uniform draw, `random_pick`
+  falls through to the first slot; the kernel does the same.
+- **parity quirk — integer walk-data serialization:** the reference seeds walk
+  data with the caller's integer `seed_time`, so position 0 of each
+  `travel_times`/`stranded_time` row prints as a bare JSON int (`0`), and a
+  `stranded_time` entry keeps that integer zero until the particle's first
+  parked step adds a float. Floats themselves print Python-repr digits, which
+  the writer reproduces via glibc's `%g` round-trip loop (the C port uses the
+  same loop, so all three implementations agree digit-for-digit).
+
+The PR #18 batched surface above intentionally does **not** share these
+semantics: it uses independent ChaCha8 streams and a different draw model.
+The parity kernel is the reference-faithful path.
 
 ## Verification
 
