@@ -230,13 +230,20 @@ pub fn advance(
     }
     let mut count = 1;
     while (p.time - target).abs() >= (p.time + estimate - target).abs() {
-        let previous_time = p.time;
+        let previous = *p;
         if !step(p, fields, behavior, draw) {
+            // run_iteration only persists a deposition flip when no row was
+            // appended. A release flag without movement is not committed.
+            p.stranded = previous.stranded;
+            p.stranded_time = previous.stranded_time;
+            if let Some(last) = out.history.last_mut() {
+                last.deposited = p.deposited;
+            }
             break;
         }
         out.history.push(*p);
         out.recorded = true;
-        estimate = (p.time - previous_time).max(0.1);
+        estimate = (p.time - previous.time).max(0.1);
         count += 1;
         if count > max_iter {
             out.hit_max_iter = true;

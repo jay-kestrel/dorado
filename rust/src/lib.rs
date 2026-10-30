@@ -36,7 +36,7 @@ impl RoutingFields {
     #[allow(clippy::too_many_arguments)]
     #[pyo3(signature = (weight, velocity, velocity_angle, cell_type, depth,
         distances, iwalk, jwalk, angles, dx, diff_coeff, *, steepest_descent=false,
-        stranding_handling="legacy", dry_depth=0.1, stranding_dt=1.0,
+        stranding_handling="park", dry_depth=0.1, stranding_dt=1.0,
         stranding_release="immediate", rest_time=0.0, entrain_prob=1.0))]
     fn new(
         weight: PyReadonlyArray3<'_, f64>,
@@ -160,11 +160,11 @@ impl RoutingFields {
             "invalid routing or stranding scalar range",
         )?;
         let park = match stranding_handling {
-            "legacy" => false,
+            "none" => false,
             "park" => true,
             _ => {
                 return Err(PyValueError::new_err(
-                    "stranding_handling must be 'legacy' or 'park'",
+                    "stranding_handling must be 'none' or 'park'",
                 ))
             }
         };
