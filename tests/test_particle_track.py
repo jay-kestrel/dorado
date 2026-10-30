@@ -2,6 +2,7 @@ from __future__ import division, print_function, absolute_import
 from builtins import range, map
 from math import floor, sqrt, pi
 import copy
+import logging
 import pytest
 import io
 import sys, os
@@ -57,16 +58,26 @@ def test_velocity():
 def test_theta():
     assert particle.theta == params.theta
 
-def test_neg_diffcoeff():
+def test_neg_diffcoeff(caplog):
     params.diff_coeff = -1.0
-    with pytest.warns(UserWarning, match="Specified diffusion coefficient is negative. Rounding up to zero"):
+    with caplog.at_level(logging.WARNING, logger="dorado"):
         particle = particle_track.Particles(params)
+    assert any(
+        record.levelno == logging.WARNING
+        and "Specified diffusion coefficient is negative" in record.getMessage()
+        for record in caplog.records
+    )
     assert particle.diff_coeff == 0.0
 
-def test_big_diffcoeff():
+def test_big_diffcoeff(caplog):
     params.diff_coeff = 3.0
-    with pytest.warns(UserWarning, match="Diffusion behaves non-physically when coefficient >= 2"):
+    with caplog.at_level(logging.WARNING, logger="dorado"):
         particle = particle_track.Particles(params)
+    assert any(
+        record.levelno == logging.WARNING
+        and "Diffusion behaves non-physically when" in record.getMessage()
+        for record in caplog.records
+    )
     assert particle.diff_coeff == 3.0
 
 def test_dry_depth():
@@ -151,24 +162,34 @@ def test_exact_locations():
     assert all_walk_data['yinds'][0] == seed_yloc
     assert all_walk_data['travel_times'][0] == [0]
 
-def test_seed_time_int():
+def test_seed_time_int(caplog):
     num_ps = 2
     particle = particle_track.Particles(params)
-    with pytest.warns(UserWarning, match="Particle seed time is nonzero, be aware when post-processing."):
+    with caplog.at_level(logging.WARNING, logger="dorado"):
         particle.generate_particles(num_ps, seed_xloc, seed_yloc,
                                     seed_time=10, method='exact')
+    assert any(
+        record.levelno == logging.WARNING
+        and "Particle seed time is nonzero" in record.getMessage()
+        for record in caplog.records
+    )
     all_walk_data = particle.run_iteration()
     assert all_walk_data['xinds'][0] == seed_xloc
     assert all_walk_data['yinds'][0] == seed_yloc
     assert all_walk_data['travel_times'][0] == [10]
     assert all_walk_data['travel_times'][1] == [10]
 
-def test_seed_time_float():
+def test_seed_time_float(caplog):
     num_ps = 2
     particle = particle_track.Particles(params)
-    with pytest.warns(UserWarning, match="Particle seed time is nonzero, be aware when post-processing."):
+    with caplog.at_level(logging.WARNING, logger="dorado"):
         particle.generate_particles(num_ps, seed_xloc, seed_yloc,
                                     seed_time=11.1, method='exact')
+    assert any(
+        record.levelno == logging.WARNING
+        and "Particle seed time is nonzero" in record.getMessage()
+        for record in caplog.records
+    )
     all_walk_data = particle.run_iteration()
     assert all_walk_data['xinds'][0] == seed_xloc
     assert all_walk_data['yinds'][0] == seed_yloc
@@ -709,44 +730,37 @@ def test_parallel_routing():
     assert 'qx' in par_result
 
 
-def test_verbose_warnings():
-    # Test diff_coeff warnings
-    import warnings
+def test_negative_diff_coeff_logs_warning(caplog):
+    # misconfiguration notices are logger warnings, not warnings.warn
     params.diff_coeff = -1.0
-    params.verbose = True
-    with pytest.warns(Warning, match="Specified diffusion coefficient is negative"):
+    with caplog.at_level(logging.WARNING, logger="dorado"):
         particle_track.Particles(params)
-    
+    assert any(
+        record.levelno == logging.WARNING
+        and "Specified diffusion coefficient is negative" in record.getMessage()
+        for record in caplog.records
+    )
+
+    caplog.clear()
     params.diff_coeff = 2.5
-    with pytest.warns(Warning, match="Diffusion behaves non-physically when"):
+    with caplog.at_level(logging.WARNING, logger="dorado"):
         particle_track.Particles(params)
+    assert any(
+        record.levelno == logging.WARNING
+        and "Diffusion behaves non-physically when" in record.getMessage()
+        for record in caplog.records
+    )
 
-    # Test no warnings when verbose=False
-    params.diff_coeff = -1.0
-    params.verbose = False
-    with warnings.catch_warnings(record=True) as w:
-        warnings.simplefilter("always")
-        particle_track.Particles(params)
-        # Should only have DeprecationWarning from handle_verbose_deprecation, not the UserWarning about diff_coeff
-        assert not any("Specified diffusion coefficient is negative" in str(warn.message) for warn in w)
-
-def test_verbose_seed_time_warning():
-    import warnings
+def test_seed_time_logs_warning(caplog):
     params.diff_coeff = 0.0
-    params.verbose = True
     pt = particle_track.Particles(params)
-    
-    with pytest.warns(Warning, match="Particle seed time is nonzero"):
+    with caplog.at_level(logging.WARNING, logger="dorado"):
         pt.generate_particles(1, [1], [1], seed_time=1)
-        
-    params.verbose = False
-    pt = particle_track.Particles(params)
-    with warnings.catch_warnings(record=True) as w:
-        warnings.simplefilter("always")
-        pt.generate_particles(1, [1], [1], seed_time=1)
-        assert not any("Particle seed time is nonzero" in str(warn.message) for warn in w)
-
-
+    assert any(
+        record.levelno == logging.WARNING
+        and "Particle seed time is nonzero" in record.getMessage()
+        for record in caplog.records
+    )
 # ---------------------------------------------------------------------------
 # per-particle size/type attributes
 # ---------------------------------------------------------------------------
@@ -761,7 +775,6 @@ def attribute_params(shape=(20, 15)):
     params.qy = np.ones(shape)
     params.theta = 1
     params.model = 'DeltaRCM'
-    params.verbose = False
     return params
 
 
@@ -967,7 +980,7 @@ def test_parallel_routing_with_attributed_particles():
     assert 'deposited' in par_result
 
 
-def test_verbose_run_iteration_warning():
+def test_verbose_run_iteration_warning(caplog):
     """A particle that exceeds the iteration limit before reaching the
     target time must trip the warning, whatever its position in the
     per-particle iteration order."""
@@ -981,7 +994,6 @@ def test_verbose_run_iteration_warning():
     # step and reaches the 0.3 s target cleanly within max_iter
     params.qx[:, 35] = 5.0
     params.qy = np.zeros((60, 60))
-    params.verbose = True
     particle = particle_track.Particles(params)
     np.random.seed(0)
     # 'exact' pairs the x and y seed lists positionally ('random' would
@@ -991,8 +1003,13 @@ def test_verbose_run_iteration_warning():
     # per-particle re-initialization of _iter_particles erased particle
     # 0's capped entry and the warning never fired
     particle.generate_particles(2, [2, 2], [30, 35], method='exact')
-    with pytest.warns(Warning, match='exceeded iteration limit'):
+    with caplog.at_level(logging.WARNING, logger="dorado"):
         particle.run_iteration(target_time=0.3, max_iter=20)
+    assert any(
+        record.levelno == logging.WARNING
+        and "exceeded iteration limit" in record.getMessage()
+        for record in caplog.records
+    )
 
 
 # --- regression tests for confirmed routing bugs ---
@@ -1203,7 +1220,7 @@ def test_water_bordered_domain_no_escape():
         assert max(path) < 6
 
 
-def test_over_limit_warning_message():
+def test_over_limit_warning_message(caplog):
     """The over-limit warning fires once with a correct, readable count.
 
     Review probe (F10): the warning read '1Particles' (missing space)
@@ -1225,8 +1242,10 @@ def test_over_limit_warning_message():
     particle = particle_track.Particles(params)
     np.random.seed(3)
     particle.generate_particles(1, [30], [30])
-    with pytest.warns(Warning, match=r'\d+ Particles exceeded') as record:
+    with caplog.at_level(logging.WARNING, logger="dorado"):
         particle.run_iteration(target_time=1e9, max_iter=25)
-    assert len(record) == 1
-    assert '1 Particles exceeded' in str(record[0].message)
+    over_limit = [r for r in caplog.records
+                  if "particles exceeded" in r.getMessage()]
+    assert len(over_limit) == 1
+    assert over_limit[0].getMessage().startswith("1 particles exceeded")
 
