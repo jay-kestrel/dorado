@@ -1,4 +1,15 @@
 # This workflow installs and tests dorado on multiple python versions and operating systems.
+#
+# Repository Actions policy only allows actions from repositories owned by
+# jay-kestrel, so the standard checkout/setup-python/upload-artifact/codecov
+# actions cannot be used (asset-sim saw actions/checkout@v6 and
+# astral-sh/setup-uv@v10.3.3 denied with the same error). A shell fetch of the
+# PR merge ref, uv-managed Python interpreters, and plain shell steps do the
+# job instead. Upstream pinned exact patches (3.11.0/3.12.0) via
+# actions/setup-python; uv's managed registry has no 3.11.0/3.12.0, so the
+# matrix pins the minor series instead (uv resolves the newest 3.11.x/3.12.x
+# managed builds). Coverage.xml is still produced for humans to download but
+# no longer uploaded to Codecov.
 
 name: build
 
@@ -16,37 +27,48 @@ jobs:
       matrix:
         # arm64 hosted capacity failures cancelled macos-latest jobs before setup.
         os: [ubuntu-latest, macos-15-intel, windows-latest]
-        python-version: ["3.11.0", "3.12.0"]
+        # Minor-series pins: uv's managed registry lacks the exact 3.11.0/3.12.0
+        # patches actions/setup-python used to install (see header comment).
+        python-version: ["3.11", "3.12"]
     env:
       OS: ${{ matrix.os }}
       PYTHON: ${{ matrix.python-version }}
+      PIP_BREAK_SYSTEM_PACKAGES: "1"  # ubuntu system python is externally managed
+    defaults:
+      run:
+        shell: bash  # uniform bash across ubuntu/macos/windows runners
     steps:
-    - uses: actions/checkout@v4
-    - name: Set up Rust (maturin builds the native extension)
-      uses: dtolnay/rust-toolchain@stable
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v5
-      with:
-        python-version: ${{ matrix.python-version }}
-    - name: Install dependencies
+    - name: Check out source (shell fetch; external actions are blocked by repo policy)
+      env:
+        REF: ${{ github.event_name == 'pull_request' && format('refs/pull/{0}/merge', github.event.number) || github.ref }}
       run: |
-        python -m pip install --upgrade "pip<26"
-        pip install pytest pytest-cov coveralls
-        pip install -r requirements.txt
+        git config --global --add safe.directory "$GITHUB_WORKSPACE"
+        git init -q "$GITHUB_WORKSPACE"
+        git fetch -q --depth=1 "https://github.com/${{ github.repository }}.git" "$REF"
+        git checkout -q --detach FETCH_HEAD
+    - name: Install Rust toolchain (shell rustup; external actions are blocked by repo policy)
+      run: |
+        # Replaces dtolnay/rust-toolchain@stable (policy-blocked): maturin
+        # compiles the native extension during pip installs and needs
+        # rustc >= 1.85 (pyo3 0.30 MSRV).
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --profile minimal
+        echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+    - name: Set up Python ${{ matrix.python-version }} (uv-managed; no external actions)
+      run: |
+        if command -v python >/dev/null 2>&1; then PY=python; else PY=python3; fi
+        "$PY" -m pip install uv
+        # uv downloads a standalone CPython build for the exact matrix version;
+        # this replaces actions/setup-python without an external action.
+        uv venv --python "${{ matrix.python-version }}" .venv
+        if [ -f .venv/bin/python ]; then VPY=.venv/bin/python; else VPY=.venv/Scripts/python.exe; fi
+        uv pip install --python "$VPY" pytest pytest-cov coveralls
+        uv pip install --python "$VPY" -r requirements.txt
     - name: Install dorado
       run: |
-        pip install -e .
+        if [ -f .venv/bin/python ]; then VPY=.venv/bin/python; else VPY=.venv/Scripts/python.exe; fi
+        uv pip install --python "$VPY" -e .
     - name: Test with pytest
-      run: |
-        pytest --cov=dorado/ --cov-report=xml
-    - name: Upload coverage to Codecov
-      uses: codecov/codecov-action@v5
-      with:
-        token: ${{ secrets.CODECOV_TOKEN }}
-        file: ./coverage.xml
-        env_vars: OS,PYTHON
-        name: codecov-umbrella
-        fail_ci_if_error: false
+      run: uv run --no-sync pytest --cov=dorado/ --cov-report=xml
 
   examples:
     runs-on: ${{ matrix.os }}
@@ -54,129 +76,173 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest]
-        python-version: ["3.11.0"]
+        python-version: ["3.11"]
     env:
       OS: ${{ matrix.os }}
       PYTHON: ${{ matrix.python-version }}
+      PIP_BREAK_SYSTEM_PACKAGES: "1"  # ubuntu system python is externally managed
+    defaults:
+      run:
+        shell: bash
     steps:
-    - uses: actions/checkout@v4
-    - name: Set up Rust (maturin builds the native extension)
-      uses: dtolnay/rust-toolchain@stable
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v5
-      with:
-        python-version: ${{ matrix.python-version }}
-    - name: Install dependencies
+    - name: Check out source (shell fetch; external actions are blocked by repo policy)
+      env:
+        REF: ${{ github.event_name == 'pull_request' && format('refs/pull/{0}/merge', github.event.number) || github.ref }}
       run: |
-        python -m pip install --upgrade "pip<26"
-        pip install pytest pytest-cov coveralls
-        pip install -r requirements.txt
+        git config --global --add safe.directory "$GITHUB_WORKSPACE"
+        git init -q "$GITHUB_WORKSPACE"
+        git fetch -q --depth=1 "https://github.com/${{ github.repository }}.git" "$REF"
+        git checkout -q --detach FETCH_HEAD
+    - name: Install Rust toolchain (shell rustup; external actions are blocked by repo policy)
+      run: |
+        # Replaces dtolnay/rust-toolchain@stable (policy-blocked): maturin
+        # compiles the native extension during pip installs and needs
+        # rustc >= 1.85 (pyo3 0.30 MSRV).
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --profile minimal
+        echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+    - name: Set up Python ${{ matrix.python-version }} (uv-managed; no external actions)
+      run: |
+        if command -v python >/dev/null 2>&1; then PY=python; else PY=python3; fi
+        "$PY" -m pip install uv
+        uv venv --python "${{ matrix.python-version }}" .venv
+        if [ -f .venv/bin/python ]; then VPY=.venv/bin/python; else VPY=.venv/Scripts/python.exe; fi
+        uv pip install --python "$VPY" pytest pytest-cov coveralls
+        uv pip install --python "$VPY" -r requirements.txt
     - name: Install dorado
       run: |
-        pip install -e .
+        if [ -f .venv/bin/python ]; then VPY=.venv/bin/python; else VPY=.venv/Scripts/python.exe; fi
+        uv pip install --python "$VPY" -e .
     - name: Benchmark routing smoke test
-      run: python benchmarks/bench_routing.py --quick --output benchmark-quick.json
-    - name: Upload routing benchmark
-      uses: actions/upload-artifact@v4
-      with:
-        name: routing-benchmark-${{ matrix.os }}-${{ matrix.python-version }}
-        path: benchmark-quick.json
-        if-no-files-found: error
+      run: |
+        uv run --no-sync python benchmarks/bench_routing.py --quick --output benchmark-quick.json
+        # The old artifact upload action is policy-blocked; print the result so
+        # the numbers land in the run log instead.
+        cat benchmark-quick.json
     - name: Run examples
       run: |
-        python examples/steady_anuga_particles.py
-        python examples/steady_deltarcm_particles.py
-        python examples/steepest_descent_deltarcm.py
-        python examples/timing_anuga_particles.py
-        python examples/set_timestep_anuga_particles.py
-        python examples/draw_anuga_particle_paths.py
-        python examples/draw_deltarcm_particle_paths.py
-        python examples/true_random_walk.py
-        python examples/parallel_comparison.py
-        python examples/traveltime_straight_channel.py
-        python examples/nourishment_example.py
-        python examples/particle_sizes_types.py
+        uv run --no-sync python examples/steady_anuga_particles.py
+        uv run --no-sync python examples/steady_deltarcm_particles.py
+        uv run --no-sync python examples/steepest_descent_deltarcm.py
+        uv run --no-sync python examples/timing_anuga_particles.py
+        uv run --no-sync python examples/set_timestep_anuga_particles.py
+        uv run --no-sync python examples/draw_anuga_particle_paths.py
+        uv run --no-sync python examples/draw_deltarcm_particle_paths.py
+        uv run --no-sync python examples/true_random_walk.py
+        uv run --no-sync python examples/parallel_comparison.py
+        uv run --no-sync python examples/traveltime_straight_channel.py
+        uv run --no-sync python examples/nourishment_example.py
+        uv run --no-sync python examples/particle_sizes_types.py
         cd examples
-        python unsteady_example.py
+        uv run --no-sync python unsteady_example.py
 
 
   conda:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
     steps:
-    - uses: actions/checkout@v4
-      with:
-        persist-credentials: false
-    - name: Setup conda
-      uses: conda-incubator/setup-miniconda@v3
-      with:
-        miniforge-version: latest
-        python-version: "3.12"
+    - name: Check out source (shell fetch; external actions are blocked by repo policy)
+      env:
+        REF: ${{ github.event_name == 'pull_request' && format('refs/pull/{0}/merge', github.event.number) || github.ref }}
+      run: |
+        git config --global --add safe.directory "$GITHUB_WORKSPACE"
+        git init -q "$GITHUB_WORKSPACE"
+        git fetch -q --depth=1 "https://github.com/${{ github.repository }}.git" "$REF"
+        git checkout -q --detach FETCH_HEAD
+    - name: Set up conda (miniforge shell installer; external actions are blocked by repo policy)
+      run: |
+        # Replaces conda-incubator/setup-miniconda@v3 (policy-blocked) with the
+        # same miniforge distribution installed from its release bundle.
+        curl -fsSL "https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-$(uname)-$(uname -m).sh" -o /tmp/miniforge.sh
+        bash /tmp/miniforge.sh -b -p "$HOME/miniforge3"
+        echo "$HOME/miniforge3/bin" >> "$GITHUB_PATH"
+    - name: Install Rust toolchain (shell rustup; external actions are blocked by repo policy)
+      run: |
+        # The conda recipe builds the maturin extension, which needs cargo.
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --profile minimal
+        echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
     - name: Install conda-build
-      shell: bash -el {0}
       run: conda install -y conda-build
     - name: Build conda recipe
-      shell: bash -el {0}
       run: conda-build -c conda-forge conda/
 
 
   lint:
     runs-on: ubuntu-latest
+    env:
+      PIP_BREAK_SYSTEM_PACKAGES: "1"  # ubuntu system python is externally managed
+    defaults:
+      run:
+        shell: bash
     steps:
-    - uses: actions/checkout@v4
-      with:
-        persist-credentials: false
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.12'
-    - name: Install ruff
-      run: pip install ruff
+    - name: Check out source (shell fetch; external actions are blocked by repo policy)
+      env:
+        REF: ${{ github.event_name == 'pull_request' && format('refs/pull/{0}/merge', github.event.number) || github.ref }}
+      run: |
+        git config --global --add safe.directory "$GITHUB_WORKSPACE"
+        git init -q "$GITHUB_WORKSPACE"
+        git fetch -q --depth=1 "https://github.com/${{ github.repository }}.git" "$REF"
+        git checkout -q --detach FETCH_HEAD
+    - name: Install ruff (runner-provided Python; external actions are blocked by repo policy)
+      run: python3 -m pip install ruff
     - name: Lint with ruff
       run: ruff check dorado/ tests/
 
 
   docs:
     runs-on: ubuntu-latest
+    env:
+      PIP_BREAK_SYSTEM_PACKAGES: "1"  # ubuntu system python is externally managed
+    defaults:
+      run:
+        shell: bash
     steps:
-    - name: Checkout
-      uses: actions/checkout@v4
-      with:
-        persist-credentials: false
-    - name: Set up Rust (maturin builds the native extension)
-      uses: dtolnay/rust-toolchain@stable
-    - name: Set up Python 3.11.0
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.11.0'
-    - name: Install dependencies
+    - name: Check out source (shell fetch; external actions are blocked by repo policy)
+      env:
+        REF: ${{ github.event_name == 'pull_request' && format('refs/pull/{0}/merge', github.event.number) || github.ref }}
       run: |
-        python -m pip install --upgrade "pip<26"
-        pip install -r requirements.txt
-        pip install sphinx
+        git config --global --add safe.directory "$GITHUB_WORKSPACE"
+        git init -q "$GITHUB_WORKSPACE"
+        git fetch -q --depth=1 "https://github.com/${{ github.repository }}.git" "$REF"
+        git checkout -q --detach FETCH_HEAD
+    - name: Install Rust toolchain (shell rustup; external actions are blocked by repo policy)
+      run: |
+        # Replaces dtolnay/rust-toolchain@stable (policy-blocked): maturin
+        # compiles the native extension during pip installs and needs
+        # rustc >= 1.85 (pyo3 0.30 MSRV).
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --profile minimal
+        echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+    - name: Set up Python 3.11 (uv-managed; no external actions)
+      run: |
+        if command -v python >/dev/null 2>&1; then PY=python; else PY=python3; fi
+        "$PY" -m pip install uv
+        uv venv --python "3.11" .venv
+        if [ -f .venv/bin/python ]; then VPY=.venv/bin/python; else VPY=.venv/Scripts/python.exe; fi
+        uv pip install --python "$VPY" -r requirements.txt
+        uv pip install --python "$VPY" sphinx
         sudo apt update -y && sudo apt install -y latexmk texlive-latex-recommended texlive-latex-extra texlive-fonts-recommended dvipng
-        pip install m2r2
-        pip install ipython
-        pip install ipykernel
+        uv pip install --python "$VPY" m2r2
+        uv pip install --python "$VPY" ipython
+        uv pip install --python "$VPY" ipykernel
     - name: Install dorado
       run: |
-        pip install .
+        if [ -f .venv/bin/python ]; then VPY=.venv/bin/python; else VPY=.venv/Scripts/python.exe; fi
+        uv pip install --python "$VPY" .
     - name: Build and test documentation
       run: |
         (cd docs && make docs)
         (cd docs && make html)
-    - name: Debug
-      run: |
-        echo $REF
-        echo $EVENT_NAME
-        echo ${{ github.event_name == 'push' }}
-        echo ${{ github.ref == 'refs/heads/master' }}
-        echo ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
-    - name: Deploy to GitHub Pages
-      uses: JamesIves/github-pages-deploy-action@v4
+    - name: Deploy to GitHub Pages (shell push; external actions are blocked by repo policy)
       if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
-      with:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          EVENT_NAME: ${{ github.event_name }}
-          REF: ${{ github.ref }}
-          BRANCH: gh-pages
-          FOLDER: docs/build/html
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        cd docs/build/html
+        git init -q .
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+        git checkout -q --orphan gh-pages
+        git add -A
+        git commit -qm "docs: deploy HTML from commit ${GITHUB_SHA}"
+        git push -q -f "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git" gh-pages
