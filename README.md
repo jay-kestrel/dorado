@@ -1,6 +1,7 @@
 # dorado - Lagrangian particle routing
-![build](https://github.com/passaH2O/dorado/workflows/build/badge.svg)
-[![codecov](https://codecov.io/gh/passaH2O/dorado/branch/master/graph/badge.svg?token=A4MWN4K1XJ)](https://codecov.io/gh/passaH2O/dorado)
+
+![build](https://github.com/jay-kestrel/dorado/actions/workflows/build.yml/badge.svg)
+[![codecov](https://codecov.io/gh/jay-kestrel/dorado/branch/master/graph/badge.svg)](https://codecov.io/gh/jay-kestrel/dorado)
 ![PyPI - Python Version](https://img.shields.io/pypi/pyversions/pydorado)
 [![PyPI version](https://badge.fury.io/py/pydorado.svg)](https://badge.fury.io/py/pydorado)
 [![status](https://joss.theoj.org/papers/f1f61292f998588ae06bb1cd14dd4063/status.svg)](https://joss.theoj.org/papers/f1f61292f998588ae06bb1cd14dd4063)
@@ -10,7 +11,9 @@
 
 dorado is a Python package for simulating passive Lagrangian particle transport over flow-fields from any 2D shallow-water hydrodynamic model using a weighted random walk methodology.
 
-For user guides and detailed examples, refer to the [documentation](https://passah2o.github.io/dorado/index.html).
+**About this repository.** This is the `jay-kestrel/dorado` fork of [`passaH2O/dorado`](https://github.com/passaH2O/dorado). The packages published to [PyPI](https://pypi.org/project/pydorado/) and [conda-forge](https://anaconda.org/conda-forge/pydorado) track the upstream project's releases; building from this repository gives you the current state of this fork. The build and codecov badges above report this fork's builds and coverage.
+
+User guides and detailed examples live in the Sphinx documentation under [`docs/source/`](docs/source/index.rst), which is built on every pull request. The upstream project also [renders this documentation online](https://passah2o.github.io/dorado/index.html).
 
 ### Example Uses:
 
@@ -25,7 +28,8 @@ For user guides and detailed examples, refer to the [documentation](https://pass
 </div>
 
 ## Installation:
-dorado supports Python 3.11+. For the full distribution including examples, clone this repository using `git clone` and run `pip install .` from the cloned directory. To test this "full" installation, you must first install `pytest` via `pip install pytest`. Then from the cloned directory the command `pytest` can be run to ensure that your installed distribution passes all of the unit tests.
+
+dorado supports Python 3.11+.
 
 For a lightweight distribution including just the core functionality, use `pip` to install via PyPI:
 
@@ -35,7 +39,34 @@ Installation using `conda` via `conda-forge` is also supported:
 
     conda install -c conda-forge pydorado
 
-For additional installation options and instructions, refer to the [documentation](https://passah2o.github.io/dorado/install/index.html).
+To install from this repository — including the examples, tests, and benchmark harness — clone it and install locally:
+
+    git clone https://github.com/jay-kestrel/dorado
+    cd dorado
+    pip install .
+
+For an editable installation, where modifications to the code are picked up when you import and run scripts, use:
+
+    pip install -e .
+
+To include the development dependencies (pytest, pytest-cov, and the documentation toolchain) as well, install with `pip install -e .[dev]` instead.
+
+To test your installation, first install `pytest` via `pip install pytest`. Then from the cloned directory the command `pytest` can be run to ensure that your installed distribution passes all of the unit tests.
+
+For additional installation options and instructions, refer to the [installation documentation](docs/source/install/index.rst).
+
+## Logging
+
+`dorado` logs through the standard `logging` module on the `dorado` logger; out of the box, warnings and above are surfaced to stderr. Two ways to turn the level up:
+
+- **Environment variable:** set `DORADO_LOG_LEVEL` to one of `DEBUG`, `INFO`, `WARNING`, `ERROR`, or `CRITICAL` before importing `dorado`.
+- **Programmatically:** call `dorado.setup_logging("INFO")`, optionally passing a custom `logging.Handler` (for example `logging.FileHandler("dorado.log")`).
+
+The legacy `verbose` parameter is deprecated and maps onto the logger; prefer the options above. See the [logging guide](docs/source/userguide/index.rst) and the [`dorado.logging_config` API reference](docs/source/apiref/loggingconfig.rst) for details.
+
+## Benchmarks
+
+The routing kernel is timed by the harness in [`benchmarks/`](benchmarks/README.md), whose `--quick` mode runs in CI on every pull request. See the harness README for the workloads, the timing contract, and how to run the full benchmark.
 
 ### Configuring log output
 dorado logs through the standard `logging` module under the `dorado` logger. The `DORADO_LOG_LEVEL` environment variable controls log visibility at import time:
@@ -55,10 +86,13 @@ Logging can also be configured programmatically at any time:
 The deprecated `verbose` parameter on dorado's routines is still accepted, but new code should configure logging with `DORADO_LOG_LEVEL` or `setup_logging()` instead.
 
 ## Contributing
-We welcome contributions to the dorado project. Please open an issue or a pull request if there is functionality you would like to see or propose. Refer to our [contributing guide](https://passah2o.github.io/dorado/misc/contributing.html) for more information.
+
+We welcome contributions to the dorado project. Please open an issue or a pull request in this repository, and see [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, testing, and conventions. The upstream project's contributing guide remains available [here](https://passah2o.github.io/dorado/misc/contributing.html).
 
 ## Citing
+
 If you use this package and wish to cite it, please use the [Journal of Open Source Software article](https://joss.theoj.org/papers/10.21105/joss.02585#).
 
 ## Funding Acknowledgments
+
 This work was supported in part by NSF EAR-1719670, the NSF GRFP under grant DGE-1610403 and the NASA Earth Venture Suborbital (EVS) award 17-EVS3-17_1-0009 in support of the DELTA-X project.
