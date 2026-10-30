@@ -583,26 +583,51 @@ def test_exposure_reenter():
     assert exp_times[0] == 3.0
 
 def test_nourishment_area():
+    # seeded off the reserved (0, 0) cell: (0, 0) entries in walk_data are
+    # the walker's parked-particle sentinel state, not real visits
     walk_data = dict()
-    walk_data['yinds'] = [[0, 1, 2]]
-    walk_data['xinds'] = [[0, 1, 2]]
-    answer = np.diag([1., 1., 1.])
+    walk_data['yinds'] = [[1, 2, 3]]
+    walk_data['xinds'] = [[1, 2, 3]]
+    answer = np.diag([0., 1., 1., 1.])
     answer[answer == 0.] = np.nan
-    vf = particle_track.nourishment_area(walk_data, (3,3),
+    vf = particle_track.nourishment_area(walk_data, (4,4),
                                          sigma=0, clip=100)
     assert ((vf == answer) | (np.isnan(vf) & np.isnan(answer))).all()
 
 def test_nourishment_area_sigma():
+    # same shifted-seed fixture; expected values pinned from
+    # nourishment_area on this fixture (scipy gaussian smoothing)
     walk_data = dict()
-    walk_data['yinds'] = [[0, 1, 2]]
-    walk_data['xinds'] = [[0, 1, 2]]
-    answer = np.array([[1, 0.222, 0],
-                       [0.222, 0.793, 0.222],
-                       [0, 0.222, 1]])
-    vf = particle_track.nourishment_area(walk_data, (3,3),
+    walk_data['yinds'] = [[1, 2, 3]]
+    walk_data['xinds'] = [[1, 2, 3]]
+    answer = np.array([[0.0141, 0.1038, 0.0143, 0.],
+                       [0.1038, 0.7789, 0.2071, 0.0146],
+                       [0.0143, 0.2071, 0.7930, 0.2216],
+                       [0., 0.0146, 0.2216, 1.]])
+    vf = particle_track.nourishment_area(walk_data, (4,4),
                                          sigma=0.5, clip=100)
     vf[np.isnan(vf)] = 0
     assert vf == pytest.approx(answer, rel=1e-2)
+
+def test_nourishment_area_ignores_parked_sentinels():
+    """(0, 0) entries in walk_data are the walker's parked-particle
+    sentinel state (particle_stepper refuses to route a particle whose
+    current index is (0, 0)), so they are not real cell visits and must
+    not pollute the corner-cell visit count."""
+    # a parked particle: its whole history is (0, 0) sentinel entries
+    parked = {'xinds': [[0, 0, 0]], 'yinds': [[0, 0, 0]],
+              'travel_times': [[1., 1., 1.]]}
+    vf = particle_track.nourishment_area(parked, (3, 3), sigma=0, clip=100)
+    assert np.isnan(vf).all()
+
+    # a real walker plus a parked one: the corner stays uncounted and the
+    # real visits normalize to 1
+    mixed = {'xinds': [[0, 0, 0], [2, 2]],
+             'yinds': [[0, 0, 0], [2, 2]],
+             'travel_times': [[1., 1., 1.], [0., 1.]]}
+    vf = particle_track.nourishment_area(mixed, (3, 3), sigma=0, clip=100)
+    assert np.isnan(vf[0, 0])
+    assert vf[2, 2] == pytest.approx(1.0)
 
 def test_nourishment_time():
     walk_data = dict()
