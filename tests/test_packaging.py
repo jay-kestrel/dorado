@@ -39,11 +39,13 @@ def wheel_names(tmp_path_factory):
     if REPO_ROOT is None:
         pytest.skip("tests are not running from a package source tree")
     out_dir = tmp_path_factory.mktemp("wheel")
-    subprocess.run(
+    proc = subprocess.run(
         [sys.executable, "-m", "pip", "wheel", "--no-deps",
-         "--no-build-isolation", "-w", str(out_dir), str(REPO_ROOT)],
-        check=True, capture_output=True,
+         "-w", str(out_dir), str(REPO_ROOT)],
+        capture_output=True, text=True,
     )
+    if proc.returncode != 0:
+        pytest.fail(f"pip wheel failed:\n{proc.stdout[-1000:]}\n{proc.stderr[-1000:]}")
     wheel = next(out_dir.glob("*.whl"))
     with zipfile.ZipFile(wheel) as zf:
         return zf.namelist()
