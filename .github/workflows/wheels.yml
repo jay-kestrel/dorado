@@ -1,5 +1,16 @@
 # Builds the native extension wheels (dorado._native) via cibuildwheel,
 # checks their contents, and runs cargo fmt/clippy/test for the rust/ crate.
+#
+# Repository Actions policy only allows actions from repositories owned by
+# jay-kestrel, so the standard checkout/rust-toolchain/cibuildwheel/
+# upload-artifact/download-artifact actions cannot be used. Shell equivalents
+# do the job instead, mirroring build.yml's actions-free pattern: a shell
+# fetch of the PR merge ref, rustup installed from its release script, and
+# the cibuildwheel CLI invoked directly (pinned to 4.3.5, the version the
+# pypa/cibuildwheel action resolved to; the action is a thin wrapper that
+# forwards CIBW_* env to that CLI). The upload-artifact action is
+# policy-blocked, so the wheel-content check runs inside each build job and
+# wheels stay in the job workspace instead of being shared across jobs.
 
 name: wheels
 
@@ -20,12 +31,24 @@ on:
 jobs:
   rust-checks:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
     steps:
-      - uses: actions/checkout@v4
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
+      - name: Check out source (shell fetch; external actions are blocked by repo policy)
+        env:
+          REF: ${{ github.event_name == 'pull_request' && format('refs/pull/{0}/merge', github.event.number) || github.ref }}
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git init -q "$GITHUB_WORKSPACE"
+          git fetch -q --depth=1 "https://github.com/${{ github.repository }}.git" "$REF"
+          git checkout -q --detach FETCH_HEAD
+      - name: Install Rust toolchain (shell rustup; external actions are blocked by repo policy)
+        run: |
+          # Replaces dtolnay/rust-toolchain@stable (policy-blocked), with the
+          # same rustfmt + clippy components the action was configured with.
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --profile minimal --component rustfmt,clippy
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
       # pyo3 links libpython when building the test binary (the
       # extension-module feature is only enabled by maturin for wheels).
       - name: Install libpython for cargo test linking
@@ -47,12 +70,27 @@ jobs:
         # the pytest matrix uses).
         os: [ubuntu-latest, macos-15-intel, windows-latest]
     runs-on: ${{ matrix.os }}
+    env:
+      PIP_BREAK_SYSTEM_PACKAGES: "1"  # ubuntu system python is externally managed
+    defaults:
+      run:
+        shell: bash
     steps:
-      - uses: actions/checkout@v4
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
-      - name: Build wheels
-        uses: pypa/cibuildwheel@v4.3.5
+      - name: Check out source (shell fetch; external actions are blocked by repo policy)
+        env:
+          REF: ${{ github.event_name == 'pull_request' && format('refs/pull/{0}/merge', github.event.number) || github.ref }}
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git init -q "$GITHUB_WORKSPACE"
+          git fetch -q --depth=1 "https://github.com/${{ github.repository }}.git" "$REF"
+          git checkout -q --detach FETCH_HEAD
+      - name: Install Rust toolchain (shell rustup; external actions are blocked by repo policy)
+        run: |
+          # maturin compiles the native extension during wheel builds and
+          # needs rustc >= 1.85 (pyo3 0.30 MSRV).
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --profile minimal
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+      - name: Build wheels (cibuildwheel CLI; external actions are blocked by repo policy)
         env:
           # One interpreter per OS; the pyo3 abi3-py311 feature tags the
           # produced wheel cp311-abi3-* so it serves all Python >= 3.11.
@@ -61,41 +99,26 @@ jobs:
           # win32 wheels to pair with), doubling build time for artifacts
           # most users cannot install.
           CIBW_BUILD: "cp312-manylinux_x86_64 cp312-macosx_x86_64 cp312-win_amd64"
-        with:
-          output-dir: wheelhouse
-      - uses: actions/upload-artifact@v4
-        with:
-          name: wheels-${{ matrix.os }}
-          path: wheelhouse/*.whl
-          if-no-files-found: error
-
-  wheel-content:
-    needs: wheels
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          pattern: wheels-*
-          merge-multiple: true
-          path: wheelhouse
+        run: |
+          if command -v python >/dev/null 2>&1; then PY=python; else PY=python3; fi
+          "$PY" -m pip install "cibuildwheel==4.3.5"
+          "$PY" -m cibuildwheel --output-dir wheelhouse
+      # The upload-artifact/download-artifact actions are policy-blocked, so
+      # the old aggregated wheel-content job is folded into each build job:
+      # every matrix job asserts its own wheel exists with the _native
+      # extension and the bundled .npz example data, which across the matrix
+      # covers the same linux/macos/windows families the aggregated check
+      # asserted.
       - name: Check wheel contents (_native extension + example .npz data)
         run: |
-          python3 - <<'EOF'
+          if command -v python >/dev/null 2>&1; then PY=python; else PY=python3; fi
+          "$PY" - <<'EOF'
           import glob
+          import os
           import zipfile
 
           wheels = sorted(glob.glob("wheelhouse/*.whl"))
-          assert wheels, "no wheels found in wheelhouse"
-          # Family coverage: one wheel per OS is expected, but assert on
-          # platform families rather than a magic count so arch additions
-          # fail on content, not arithmetic.
-          families = {
-              "linux": [w for w in wheels if "manylinux" in w or "musllinux" in w],
-              "macos": [w for w in wheels if "macosx" in w],
-              "windows": [w for w in wheels if "win" in w],
-          }
-          for family, found in families.items():
-              assert found, f"no {family} wheel found in: {wheels}"
+          assert wheels, f"no wheels found in wheelhouse ({os.environ.get('RUNNER_OS', 'unknown runner os')})"
           for whl in wheels:
               names = zipfile.ZipFile(whl).namelist()
               native = [
