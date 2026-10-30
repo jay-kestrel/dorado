@@ -13,6 +13,8 @@ import numpy as np
 from numpy.random import random
 from numpy import maximum, nansum
 
+import dorado.cobol_walk as cw
+
 logger = logging.getLogger(__name__)
 
 
@@ -721,10 +723,33 @@ def particle_stepper(Particles, current_inds, travel_times, start_optional):
         park_mask = [False]*len(inds_tuple)
         stranded_times = None
 
-    # for each particle index get the weights
-    new_cells = [get_weight(Particles, x)
-                 if (x != (0, 0) and not park_mask[i]) else 4
-                 for i, x in enumerate(inds_tuple)]
+    # for each particle index get the weights. With DORADO_COBOL=1 the
+    # pick runs through the batched COBOL kernel instead: one uniform
+    # per eligible particle drawn from the reference stream in the same
+    # order (np.random.random() is bit-identical to the reference's
+    # np.random.uniform(0, cutoffs[-1])), weight rows gathered into a
+    # (k, 9) array, and the kernel reproduces random_pick exactly
+    # (NaN -> 0, cumsum, u*total, searchsorted-left).
+    if cw.cobol_active():
+        if Particles.steepest_descent is True:
+            raise NotImplementedError(
+                "DORADO_COBOL=1 implements the weighted random walk; "
+                "steepest_descent mode has no COBOL kernel")
+        eligible = [i for i, x in enumerate(inds_tuple)
+                    if (x != (0, 0) and not park_mask[i])]
+        pick_u = np.random.random(len(eligible))
+        rows = np.array([Particles.weight[inds_tuple[i][0],
+                                          inds_tuple[i][1], :]
+                         for i in eligible], dtype=np.float64) \
+            if eligible else np.zeros((0, 9), dtype=np.float64)
+        picked = cw.pick_cells(rows, pick_u)
+        new_cells = [4]*len(inds_tuple)
+        for j, i in enumerate(eligible):
+            new_cells[i] = int(picked[j])
+    else:
+        new_cells = [get_weight(Particles, x)
+                     if (x != (0, 0) and not park_mask[i]) else 4
+                     for i, x in enumerate(inds_tuple)]
     # for each particle get the new index
     new_inds = list(map(lambda x, y:
                         calculate_new_ind(x, y, Particles.iwalk,
@@ -796,13 +821,50 @@ def particle_stepper(Particles, current_inds, travel_times, start_optional):
                 new_inds[i][1] = inds[i][1]
                 new_deposited[i] = 1
 
-    # add the travel times
-    temp_travel = list(map(lambda w, x, y, z, vm, dm:
-                           calc_travel_times(Particles, w, x, y, z,
-                                             velocity_mult=vm,
-                                             diff_mult=dm),
-                           new_cells, current_inds, new_inds, dist,
-                           velocity_mults, diff_mults))
+    # add the travel times. With DORADO_COBOL=1 the moved-branch math
+    # runs through the batched COBOL kernel: moved flags come from the
+    # final (override-applied) indices, and one diffusion uniform per
+    # moved particle in index order is drawn from the reference stream
+    # when diff_coeff > 0, matching calc_travel_times' draw placement.
+    if cw.cobol_active():
+        n_particles_travel = len(new_inds)
+        moved_flags = np.array(
+            [0 if (new_inds[i][0] == inds[i][0]
+                   and new_inds[i][1] == inds[i][1]) else 1
+             for i in range(n_particles_travel)], dtype=np.int32)
+        moved_idx = [i for i in range(n_particles_travel)
+                     if moved_flags[i] == 1]
+        if Particles.diff_coeff > 0:
+            diff_u = np.zeros(n_particles_travel)
+            diff_u[moved_idx] = np.random.random(len(moved_idx))
+        else:
+            diff_u = np.zeros(n_particles_travel)
+        dist_arr = np.array(dist, dtype=np.float64) \
+            if dist else np.zeros(0, dtype=np.float64)
+        old_vel = np.zeros(n_particles_travel)
+        new_vel = np.zeros(n_particles_travel)
+        ang_new = np.zeros(n_particles_travel)
+        ang_old = np.zeros(n_particles_travel)
+        for i in moved_idx:
+            x, y = inds[i]
+            nx, ny = new_inds[i]
+            w = new_cells[i]
+            old_vel[i] = Particles.velocity[x, y]
+            new_vel[i] = Particles.velocity[nx, ny]
+            ang_new[i] = Particles.angles.flat[w]
+            ang_old[i] = Particles.velocity_angle[x, y]
+        temp_travel = cw.travel_times(
+            dist_arr, old_vel, new_vel, ang_new, ang_old, diff_u,
+            np.array(diff_mults, dtype=np.float64),
+            np.array(velocity_mults, dtype=np.float64), moved_flags,
+            Particles.diff_coeff)
+    else:
+        temp_travel = list(map(lambda w, x, y, z, vm, dm:
+                               calc_travel_times(Particles, w, x, y, z,
+                                                 velocity_mult=vm,
+                                                 diff_mult=dm),
+                               new_cells, current_inds, new_inds, dist,
+                               velocity_mults, diff_mults))
     # parked steps book the stranding clock instead of a travel time
     for i, parked in enumerate(park_mask):
         if parked:
