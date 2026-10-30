@@ -11,7 +11,7 @@ The basic workflow when using `dorado` can be summarized in three steps:
 
 1. Initialize the parameters class (:obj:`dorado.particle_track.modelParams`) for parameters related to the grid (model domain). This includes information about flow fields, grid cell size, and tuning parameters for the random walk.
 
-2. Initialize a :obj:`dorado.particle_track.Particles` class and generate a set of particles to be routed. A built in `particle_generator()` function is available to help with particle generation.
+2. Initialize a :obj:`dorado.particle_track.Particles` class and generate a set of particles to be routed. The :obj:`dorado.particle_track.Particles.generate_particles` method is available to help with particle generation.
 
 3. Either use one of the high-level API procedures defined in :download:`routines.py <../../../dorado/routines.py>`, or simulation particle evolution using the `run_iteration` method.
 
@@ -94,6 +94,30 @@ Lower-level functionality is provided in the :download:`particle_track.py <../..
 * Assorted functions for transforming from real coordinate systems to the raster domain used for the particle routing
 
 For additional detail, either view the script itself :download:`particle_track.py <../../../dorado/particle_track.py>`, or refer to the API documentation: :ref:`particletrack`.
+
+Logging and verbosity
+---------------------
+
+`dorado` logs through the standard ``logging`` module on the `dorado` logger (see :ref:`loggingconfig`). Out of the box the logger is unconfigured, so Python's ``lastResort`` handler surfaces ``WARNING``-and-above records to stderr. There are two ways to turn the level up:
+
+**Environment variable.** Set ``DORADO_LOG_LEVEL`` to one of ``DEBUG``, ``INFO``, ``WARNING``, ``ERROR``, or ``CRITICAL`` before importing `dorado`. The value is read once at import time: the level is applied to the `dorado` logger, and a stderr handler with the format ``dorado - LEVEL - message`` is attached if none is present. An invalid value logs a warning and falls back to ``WARNING``; the import never fails.
+
+::
+
+    $ export DORADO_LOG_LEVEL=INFO
+
+**Programmatically.** Call :obj:`dorado.logging_config.setup_logging` with one of the five level names:
+
+.. doctest::
+
+   >>> import dorado
+   >>> dorado.setup_logging("INFO")
+
+To log somewhere other than stderr, pass a custom handler, e.g. ``dorado.setup_logging("DEBUG", handler=logging.FileHandler("dorado.log"))``.
+
+At ``INFO`` level, `dorado` reports the defaulting decisions made while a :obj:`dorado.particle_track.Particles` object is constructed (e.g. the ``theta``, ``gamma``, and diffusion-coefficient defaults, and which routing mode is active), the registration of an ROI grid, and per-run start/complete summaries from the routing kernel in ``lagrangian_walker``.
+
+The legacy ``verbose`` parameter of :obj:`dorado.particle_track.modelParams` is **deprecated**: passing ``verbose=True`` maps to ``INFO`` level logging, ``verbose=False`` to ``ERROR`` level, and a ``DeprecationWarning`` is emitted in both cases. Migrate to ``DORADO_LOG_LEVEL`` or :obj:`dorado.logging_config.setup_logging`.
 
 .. toctree::
    :maxdepth: 1
