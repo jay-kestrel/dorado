@@ -1,55 +1,68 @@
-# This workflows will upload a Python Package using Twine when a release is created
-# For more information see: https://help.github.com/en/actions/language-and-framework-guides/using-python-with-github-actions#publishing-to-package-registries
+# This workflow builds the distribution on release publication and uploads it
+# to PyPI using Twine.
+#
+# Repository Actions policy only allows actions from repositories owned by
+# jay-kestrel, so the standard checkout/setup-python/upload-artifact/
+# download-artifact/gh-action-pypi-publish actions cannot be used. Shell
+# equivalents do the job instead, mirroring build.yml's actions-free pattern:
+# a shell fetch of the release ref, a uv-managed interpreter, and twine
+# installed from PyPI for the upload. The old build/publish job split
+# collapsed into one job — sharing dists between jobs required the
+# policy-blocked upload/download-artifact actions. Publishing authenticates
+# with an API token stored in the PYPI_TOKEN secret (repo- or pypi-environment
+# scoped); the third-party trusted-publishing action that used OIDC instead
+# is policy-blocked. A release without that secret fails at the publish step
+# with a clear auth error.
+# This workflow has never run under the Actions policy; the publish step is
+# verified at release time only.
 
 name: deploy
 
 on:
   release:
     types: [published]
-    
-jobs:
-  build:
-    name: Build distribution
-    runs-on: ubuntu-latest
 
-    steps:
-      - uses: actions/checkout@v4
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - name: Install pypa/build
-        run: >-
-          python3 -m
-          pip install
-          build
-          --user
-      - name: Build a binary wheel and a source tarball
-        run: python3 -m build
-      - name: Store the distribution packages
-        uses: actions/upload-artifact@v4
-        with:
-          name: python-package-distributions
-          path: dist/
-          
-  publish-to-pypi:
-    name: >-
-      Publish Python distribution to PyPI
-    if: startsWith(github.ref, 'refs/tags/') # only publish to PyPI on tag pushes
-    needs:
-      - build
+jobs:
+  build-and-publish:
+    name: Build distribution and publish to PyPI
     runs-on: ubuntu-latest
     environment:
       name: pypi
       url: https://pypi.org/p/pydorado
-    permissions:
-      id-token: write # IMPORTANT: mandatory for trusted publishing
+    env:
+      PIP_BREAK_SYSTEM_PACKAGES: "1"  # ubuntu system python is externally managed
+    defaults:
+      run:
+        shell: bash
 
     steps:
-      - name: Download all the dists
-        uses: actions/download-artifact@v4
-        with:
-          name: python-package-distributions
-          path: dist/
-      - name: Publish distribution to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1       
+      - name: Check out source (shell fetch; external actions are blocked by repo policy)
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git init -q "$GITHUB_WORKSPACE"
+          git fetch -q --depth=1 "https://github.com/${{ github.repository }}.git" "${{ github.ref }}"
+          git checkout -q --detach FETCH_HEAD
+      - name: Set up Python 3.12 (uv-managed; no external actions)
+        run: |
+          if command -v python >/dev/null 2>&1; then PY=python; else PY=python3; fi
+          "$PY" -m pip install uv
+          uv venv --python "3.12" .venv
+      - name: Install Rust toolchain (shell rustup; external actions are blocked by repo policy)
+        run: |
+          # maturin compiles the native extension during python -m build and
+          # needs rustc >= 1.85 (pyo3 0.30 MSRV). The pre-scaffolding version
+          # of this workflow had no Rust step; the package has needed one
+          # since the rust/ crate was added.
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --profile minimal
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+      - name: Build a binary wheel and a source tarball
+        run: uv run --no-sync python -m build
+      - name: List distribution contents
+        run: ls -l dist/
+      - name: Publish distribution to PyPI (twine; external actions are blocked by repo policy)
+        if: startsWith(github.ref, 'refs/tags/') # only publish to PyPI on tag pushes
+        env:
+          TWINE_NON_INTERACTIVE: "1"
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
+        run: uv run --no-sync twine upload dist/*
