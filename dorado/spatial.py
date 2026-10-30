@@ -7,6 +7,7 @@ Higher-level methods to quantify spatial exposure time.
 Project Homepage: https://github.com/passaH2O/dorado
 """
 import json
+import logging
 import numpy as np
 import dorado.particle_track as pt
 import matplotlib.pyplot as plt
@@ -14,6 +15,8 @@ from matplotlib.gridspec import GridSpec
 from matplotlib.colors import BoundaryNorm
 from scipy.stats import gaussian_kde
 from scipy.ndimage import gaussian_filter
+
+logger = logging.getLogger(__name__)
 
 def systemwide(walk_data, elevation, celltype, resolution_factor):
     """   
@@ -54,6 +57,7 @@ def systemwide(walk_data, elevation, celltype, resolution_factor):
     n_chunks_x = cols // resolution_factor
 
     exposure_time_data_chunks = []
+    n_analyzed = 0
     for r in range(n_chunks_y):
         for c in range(n_chunks_x):
             r0 = r * resolution_factor
@@ -65,8 +69,14 @@ def systemwide(walk_data, elevation, celltype, resolution_factor):
                 chunk_walk = _find_common_indices_info(walk_data, (r0, r1), (c0, c1))
                 exp_data = pt.exposure_time(chunk_walk, regions)
                 exposure_time_data_chunks.append(exp_data)
+                n_analyzed += 1
             else:
                 exposure_time_data_chunks.append(np.nan)
+
+    logger.info('Systemwide exposure analysis: %dx%d grid, '
+                'resolution factor %d, %d of %d chunks analyzed',
+                rows, cols, resolution_factor, n_analyzed,
+                n_chunks_y * n_chunks_x)
 
     return exposure_time_data_chunks
 
@@ -145,7 +155,8 @@ def localized(walk_data, elevation, celltype, resolution_factor):
     regions = np.zeros_like(elevation, dtype="int")
     regions[in_regions] = 1
 
-    exposure_time_data_chunks = [] # Each chunk is ROI
+    exposure_time_data_chunks = []  # Each chunk is ROI
+    n_analyzed = 0
     for r in range(n_chunks_y):
         for c in range(n_chunks_x):
             r0 = r * resolution_factor
@@ -161,8 +172,14 @@ def localized(walk_data, elevation, celltype, resolution_factor):
                 chunk_walk = _find_common_indices_info(walk_data, (r0, r1), (c0, c1))
                 exp_data = pt.exposure_time(chunk_walk, region_chunk)
                 exposure_time_data_chunks.append(exp_data)
+                n_analyzed += 1
             else:
                 exposure_time_data_chunks.append(np.nan)
+
+    logger.info('Localized exposure analysis: %dx%d grid, '
+                'resolution factor %d, %d of %d chunks analyzed',
+                rows, cols, resolution_factor, n_analyzed,
+                n_chunks_y * n_chunks_x)
 
     return exposure_time_data_chunks
 
@@ -244,6 +261,12 @@ def compute_thresholds(exposure_data,
     E50 = median_absolute_deviation_filter(E50, window_size, threshold)
     E75 = median_absolute_deviation_filter(E75, window_size, threshold)
     E90 = median_absolute_deviation_filter(E90, window_size, threshold)
+
+    logger.info('Exposure thresholds computed: %dx%d chunk grid, '
+                '%d of %d chunks with valid percentiles',
+                E50.shape[0], E50.shape[1],
+                int(np.sum(~np.isnan(E50))), E50.size)
+
     return E50, E75, E90
 
 def median_absolute_deviation_filter(data, window_size, threshold):
