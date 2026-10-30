@@ -51,11 +51,15 @@ docs = [
 "Bug Reports" = 'https://github.com/passaH2O/dorado/issues'
 "Source" = 'https://github.com/passaH2O/dorado'
 
+[project.scripts]
+pydorado = "dorado.cli:main"
+
 [tool.setuptools.package-data]
-"pydorado" = ["*.txt", "*.npz"]
+"dorado" = ["*.txt", "*.npz"]
+"dorado.example_data" = ["*.npz"]
 
 [tool.setuptools]
-packages = ["dorado"]
+packages = ["dorado", "dorado.example_data"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
