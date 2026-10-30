@@ -15,20 +15,39 @@ class DummyParams:
         self.theta = 1
         self.model = 'DeltaRCM'
 
-def test_routines_verbose_deprecation():
-    # Test steady_plots
-    walk_data = {'x': [], 'y': []}
-    with pytest.warns(DeprecationWarning, match="The 'verbose' parameter is deprecated"):
-        try:
-            routines.steady_plots(walk_data, 1, verbose=True)
-        except Exception:
-            pass # We just care about the warning
-            
-    with pytest.warns(DeprecationWarning, match="The 'verbose' parameter is deprecated"):
-        try:
-            routines.time_plots(walk_data, 1, verbose=True)
-        except Exception:
-            pass
+def test_routines_verbose_deprecation(tmp_path):
+    """The deprecated verbose parameter must warn AND the calls must fully
+    succeed. A blanket ``except Exception: pass`` here used to let any
+    steady_plots/time_plots crash count as a passing warning check
+    (review F13). The deprecation shim only runs on the save path when the
+    target folder already exists, so both calls save into tmp_path."""
+    with pytest.warns(DeprecationWarning,
+                      match="The 'verbose' parameter is deprecated"):
+        routines.steady_plots(_steady_particles(), 1, verbose=True,
+                              folder_name=str(tmp_path))
+
+    with pytest.warns(DeprecationWarning,
+                      match="The 'verbose' parameter is deprecated"):
+        routines.time_plots(_steady_particles(), 1, verbose=True,
+                            folder_name=str(tmp_path))
+    plt.close('all')
+
+
+def _steady_particles(n=10):
+    """Minimal valid DeltaRCM domain (mirrors tests/test_parallel_routing.py);
+    the flow field pushes particles north with no dry cells."""
+    params = pt.modelParams()
+    params.depth = np.ones((n, n))
+    params.stage = np.ones((n, n))
+    params.qx = np.zeros((n, n))
+    params.qy = np.ones((n, n))
+    params.dx = 1
+    params.theta = 1
+    params.model = 'DeltaRCM'
+    particles = pt.Particles(params)
+    np.random.seed(0)  # fix the random seed
+    particles.generate_particles(2, [4, 5], [4, 5])
+    return particles
 
 
 import logging
