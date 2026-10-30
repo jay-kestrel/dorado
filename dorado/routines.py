@@ -79,6 +79,7 @@ def steady_plots(particle, num_iter,
             os.makedirs(folder_name+os.sep+'data')
 
     # Iterate and save results
+    walk_data = None  # stays None when num_iter is 0
     for i in tqdm(list(range(0, num_iter)), ascii=True):
         # Do particle iterations
         walk_data = particle.run_iteration()
@@ -107,7 +108,7 @@ def steady_plots(particle, num_iter,
                         'figs'+os.sep+'output'+str(i)+'.png',
                         bbox_inches='tight')
 
-    if save_output:
+    if save_output and walk_data is not None:
         # save data as json text file - technically human readable
         fpath = folder_name+os.sep+'data'+os.sep+'data.txt'
         json.dump(walk_data, open(fpath, 'w'))
@@ -210,16 +211,39 @@ def unsteady_plots(dx, Np_tracer, seed_xloc, seed_yloc, num_steps, timestep,
     qxlist = sorted(qxlist)
     qylist = sorted(qylist)
     datalist = sorted(datalist)
-    if num_steps > max(len(depthlist), len(datalist)):
+    # every variable read for this output_type needs at least num_steps
+    # files; a mismatched set of lists would otherwise crash mid-run with
+    # an opaque IndexError
+    if output_type in ('csv', 'npy'):
+        file_counts = {'depth': len(depthlist), 'stage': len(stagelist),
+                       'qx': len(qxlist), 'qy': len(qylist)}
+    elif output_type == 'npz':
+        file_counts = {'data': len(datalist)}
+    else:
+        raise ValueError('Output datatype/structure unsupported, modify'
+                         ' the output reading portion of the code')
+
+    n_available = min(file_counts.values())
+    if num_steps > n_available:
+        if num_steps <= max(file_counts.values()):
+            # lists are mismatched: some variable runs out before the others
+            raise ValueError(
+                'Mismatched model output file lists in output_base: ' +
+                ', '.join('%s=%d' % (k, v) for k, v in
+                          sorted(file_counts.items())) +
+                '; every variable read for output_type=' +
+                repr(output_type) + ' needs at least num_steps=' +
+                str(num_steps) + ' files')
         handle_verbose_deprecation(verbose)
         logger.warning('num_steps exceeds number of model outputs in'
-              ' output_base')
+                       ' output_base')
         logger.warning('Setting num_steps to equal number of model outputs')
-        num_steps = max(len(depthlist), len(datalist))
+        num_steps = n_available
 
     # Create vector of target times
     target_times = np.arange(timestep, timestep*(num_steps + 1), timestep)
     # Iterate through model timesteps
+    walk_data = None  # stays None when num_steps is 0
     for i in tqdm(list(range(0, num_steps)), ascii=True):
         # load depth, stage, qx, qy for this timestep
         # Making assumption that other variables are constant between output
@@ -285,8 +309,9 @@ def unsteady_plots(dx, Np_tracer, seed_xloc, seed_yloc, num_steps, timestep,
                     bbox_inches='tight')
 
     # save data as a json text file - technically human readable
-    fpath = folder_name+os.sep+'data'+os.sep+'data.txt'
-    json.dump(walk_data, open(fpath, 'w'))
+    if walk_data is not None:
+        fpath = folder_name+os.sep+'data'+os.sep+'data.txt'
+        json.dump(walk_data, open(fpath, 'w'))
 
     # example code for loading the dict back from the output json file:
     # data = json.load(open('data.txt'))
@@ -341,6 +366,7 @@ def time_plots(particle, num_iter, folder_name=None, verbose=None):
         os.makedirs(folder_name+os.sep+'data')
 
     # Iterate and save results
+    walk_data = None  # stays None when num_iter is 0
     for i in tqdm(list(range(0, num_iter)), ascii=True):
         # Do particle iterations
         walk_data = particle.run_iteration()
@@ -378,8 +404,9 @@ def time_plots(particle, num_iter, folder_name=None, verbose=None):
                     bbox_inches='tight')
 
     # save data as a json text file - technically human readable
-    fpath = folder_name+os.sep+'data'+os.sep+'data.txt'
-    json.dump(walk_data, open(fpath, 'w'))
+    if walk_data is not None:
+        fpath = folder_name+os.sep+'data'+os.sep+'data.txt'
+        json.dump(walk_data, open(fpath, 'w'))
 
     # example code for loading the dict back from the output json file:
     # data = json.load(open('data.txt'))
@@ -1307,10 +1334,9 @@ def show_nourishment_area(visit_freq, grid=None, walk_data=None,
     alphas = np.clip(alphas, min_alpha, 1)
     colors = Normalize(np.nanmin(visit_freq), 1)(visit_freq)  # Normalize color
     if isinstance(cmap, str):
-        try:
-            cmap = matplotlib.colormaps[cmap]
-        except AttributeError:
-            cmap = plt.cm.get_cmap(cmap)
+        # matplotlib.colormaps exists since 3.5; the removed plt.cm.get_cmap
+        # fallback could never help on any supported matplotlib
+        cmap = matplotlib.colormaps[cmap]
     colors = cmap(colors)
     colors[..., -1] = alphas
 
@@ -1323,7 +1349,7 @@ def show_nourishment_area(visit_freq, grid=None, walk_data=None,
     ax.set_facecolor('k')  # Set facecolor black
     if grid is not None:
         # Grid background intentionally dark:
-        im = ax.imshow(grid, cmap='gist_gray', vmax=np.max(grid)*3)
+        im = ax.imshow(grid, cmap='gist_gray', vmax=np.nanmax(grid)*3)
     # Show nourishment area
     nr = ax.imshow(colors)
     plt.title('Nourishment Area')
@@ -1397,10 +1423,9 @@ def show_nourishment_time(mean_times, grid=None, walk_data=None,
     colors = Normalize(np.nanmin(mean_times),
                        np.nanmax(mean_times))(mean_times)  # Normalize colors
     if isinstance(cmap, str):
-        try:
-            cmap = matplotlib.colormaps[cmap]
-        except AttributeError:
-            cmap = plt.cm.get_cmap(cmap)
+        # matplotlib.colormaps exists since 3.5; the removed plt.cm.get_cmap
+        # fallback could never help on any supported matplotlib
+        cmap = matplotlib.colormaps[cmap]
     colors = cmap(colors)
     colors[..., -1] = alphas
 
@@ -1413,7 +1438,7 @@ def show_nourishment_time(mean_times, grid=None, walk_data=None,
     ax.set_facecolor('k')  # Set facecolor black
     if grid is not None:
         # Grid background intentionally dark:
-        im = ax.imshow(grid, cmap='gist_gray', vmax=np.max(grid)*3)
+        im = ax.imshow(grid, cmap='gist_gray', vmax=np.nanmax(grid)*3)
     # Show nourishment times
     nt = ax.imshow(colors)
     plt.title('Nourishment Times')

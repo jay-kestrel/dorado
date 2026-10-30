@@ -371,6 +371,7 @@ def plot_spatial(exposure_maps,
         ax.tick_params(axis='both', which='both', labelsize=8)
         ax.set_xticks([])
         ax.set_yticks([])
+        axes.append(ax)
 
     cax = fig.add_axes([0.149, 0.13, 0.7525, 0.04])
     cbar = fig.colorbar(plt.cm.ScalarMappable(norm=norm, cmap=cmap),
