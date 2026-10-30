@@ -2,7 +2,5 @@
 source = dorado
 
 omit =
-    dorado/parallel_routing.py
-    dorado/routines.py
     *__init__*
     dorado/example_data/define_params.py
