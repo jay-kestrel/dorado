@@ -16,7 +16,7 @@ Grid and coordinate model
 ``modelParams`` fields and validation
 -------------------------------------
 
-Validation happens once, when a :obj:`dorado.particle_track.Particles` object is constructed from a :obj:`dorado.particle_track.modelParams` instance. Inputs are copied (the caller's arrays are never modified); required-but-missing inputs raise ``ValueError``.
+Validation happens once, when a :obj:`dorado.particle_track.Particles` object is constructed from a :obj:`dorado.particle_track.modelParams` instance. Inputs are copied (the caller's arrays are never modified); required-but-missing inputs raise ``ValueError``. The constructor also takes the routing-engine arguments ``backend`` (``'rust'`` default or ``'python'``, also forced by the ``DORADO_BACKEND`` environment variable), ``seed`` (native per-particle stream seed), and ``n_threads`` (native worker threads, default 1); see *Randomness and reproducibility*.
 
 Required fields:
 
@@ -64,6 +64,8 @@ Stepping semantics
 ------------------
 
 ``Particles.run_iteration(target_time=None, max_iter=10000)`` advances every particle:
+
+Either backend performs the walk: the native kernel (default) steps the whole batch in one call over the staged fields, while the retained Python walker (``backend='python'``) runs the per-particle loop in ``lagrangian_walker.py`` verbatim. The recorded ``walk_data`` is identical in structure for both; the random streams are not (see *Randomness and reproducibility*).
 
 - With no ``target_time``, one iteration is run. With a ``target_time``, each particle keeps stepping (in per-particle sub-iterations) until its accumulated travel time reaches the target or ``max_iter`` steps are exhausted.
 - Calling it before any particles exist raises ``ValueError`` (``walk_data is None``).
@@ -113,7 +115,12 @@ The ``walk_data`` schema
 Randomness and reproducibility
 ------------------------------
 
-All stochasticity — random seed placement, neighbor selection, and the travel-time diffusion draw — uses NumPy's global random state. ``dorado`` never seeds it; callers who need reproducible runs should seed the global RNG (e.g. ``np.random.seed(...)``) before generating and routing particles, as the test suite does. ``parallel_routing`` draws one seed per worker from the parent's global RNG and reseeds each worker before it walks, so its workers produce independent — not identical — random walks, and a run stays reproducible when the global RNG is seeded before the call.
+Which random stream a run draws from depends on the routing backend selected at construction (``Particles(params, backend=...)``; the ``DORADO_BACKEND`` environment variable overrides the constructor choice):
+
+- **Native backend (default, ``backend='rust'``):** every particle walks on its own independent ChaCha8 stream. The streams are created once per ``Particles`` object from the ``seed`` constructor argument — fresh OS entropy when ``seed=None``, otherwise the given integer — and persist across iterations, so a native run is reproducible from ``seed`` alone and identical for any ``n_threads``. The native draws intentionally do **not** reproduce NumPy's MT19937 stream: seeded native trajectories differ from the legacy ones (the seeded-trajectory expectations in ``tests/test_examplecases.py`` are regenerated from the ``seed=0`` native stream), while walk statistics — travel-time, displacement, deposition, and stranding distributions — are equivalent.
+- **Python backend (``backend='python'``):** unchanged legacy behavior — all stochasticity (random seed placement, neighbor selection, and the travel-time diffusion draw) uses NumPy's global random state. ``dorado`` never seeds it; callers who need reproducible runs seed the global RNG (e.g. ``np.random.seed(...)``) before generating and routing particles, which reproduces the pre-port trajectories exactly.
+
+``parallel_routing`` draws one seed per worker from the parent's global RNG and reseeds each worker before it walks (``np.random.seed`` plus ``Particles.reseed``), so its workers produce independent — not identical — random walks on either backend; a run stays reproducible when the parent's randomness is pinned before the call (a ``seed`` on the ``Particles`` object for the native backend, a seeded global RNG for the python backend).
 
 Assumptions and limitations
 ---------------------------
