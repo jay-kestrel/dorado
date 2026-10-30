@@ -465,3 +465,44 @@ def test_clear_borders():
     assert np.all(raster[-1,:,:] == 0)
     assert np.all(raster[:,0,:] == 0)
     assert np.all(raster[:,-1,:] == 0)
+
+# --- regression tests for confirmed routing bugs ---
+
+def test_steep_descent_dead_end_returns_current():
+    """A dead-end weight row must return the current cell, not NW."""
+    np.random.seed(0)
+    assert lw.steep_descent(np.array([0, 0, 0, 0, 1.0, 0, 0, 0, 0])) == 4
+
+
+def test_steep_descent_does_not_mutate_input():
+    """steep_descent must not modify the passed weight row."""
+    probs = np.array([0.1, 0, 0.3, 0, 0, 0.4, 0, 0, 0.2])
+    snapshot = probs.copy()
+    lw.steep_descent(probs)
+    assert np.array_equal(probs, snapshot)
+
+
+def test_random_pick_does_not_mutate_input():
+    """random_pick must not modify the passed weight row."""
+    probs = np.array([0.1, np.nan, 0.3, 0, 0, 0.4, 0, 0, 0.2])
+    snapshot = probs.copy()
+    lw.random_pick(probs)
+    assert np.array_equal(probs, snapshot, equal_nan=True)
+
+
+def test_random_pick_seed_accepts_ndarray():
+    """random_pick_seed must accept the ndarray probs it documents."""
+    choices = [1, 2, 3]
+    np.random.seed(0)
+    pick = lw.random_pick_seed(choices, np.array([0.2, 0.5, 0.3]))
+    assert pick in choices
+
+
+def test_get_weight_leaves_weight_unchanged():
+    """Stepping must not corrupt the shared Particles.weight array."""
+    ind = (1, 1)
+    np.random.seed(0)
+    particles = pt.Particles(params)
+    weight_snapshot = particles.weight.copy()
+    lw.get_weight(particles, ind)
+    assert np.array_equal(particles.weight, weight_snapshot)
