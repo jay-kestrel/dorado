@@ -1,6 +1,5 @@
 import importlib
 import logging
-import warnings
 
 import pytest
 
@@ -26,6 +25,17 @@ def clean_logger():
     lg.handlers = []
 
 
+@pytest.fixture(autouse=True)
+def restore_dorado_logger():
+    """Save and restore the global dorado logger around each test."""
+    logger = logging_config.logger
+    level = logger.level
+    handlers = list(logger.handlers)
+    yield
+    logger.setLevel(level)
+    logger.handlers[:] = handlers
+
+
 def test_setup_logging():
     # Test default
     logging_config.setup_logging()
@@ -41,26 +51,33 @@ def test_setup_logging():
 
 
 def test_handle_verbose_deprecation():
-    deprecation_msg = "The 'verbose' parameter is deprecated"
-
-    # Test verbose=True
-    with pytest.warns(DeprecationWarning, match=deprecation_msg):
+    # verbose=True raises the logger to INFO
+    with pytest.warns(DeprecationWarning, match="The 'verbose' parameter is deprecated"):
         logging_config.handle_verbose_deprecation(True)
     assert logging_config.logger.level == logging.INFO
 
-    # Test verbose=False
-    with pytest.warns(DeprecationWarning, match=deprecation_msg):
+    # verbose=False must not silence the logger: the pre-existing level
+    # is kept, so warnings emitted afterwards stay visible
+    logging_config.logger.setLevel(logging.WARNING)
+    with pytest.warns(DeprecationWarning, match="The 'verbose' parameter is deprecated"):
         logging_config.handle_verbose_deprecation(False)
-    assert logging_config.logger.level == logging.ERROR
+    assert logging_config.logger.isEnabledFor(logging.WARNING)
 
-    # Test verbose=None
-    with warnings.catch_warnings(record=True) as w:
-        warnings.simplefilter("always")
+    # verbose=None is documented as equivalent to True (INFO level)
+    with pytest.warns(DeprecationWarning, match="The 'verbose' parameter is deprecated"):
         logging_config.handle_verbose_deprecation(None)
-        # Assuming no other warnings are triggered
-        assert not any(
-            issubclass(warn.category, DeprecationWarning) for warn in w
-        )
+    assert logging_config.logger.level == logging.INFO
+
+
+def test_warning_visible_after_verbose_false(caplog):
+    # a WARNING emitted after a verbose=False call is still visible
+    logging_config.logger.setLevel(logging.WARNING)
+    with pytest.warns(DeprecationWarning, match="The 'verbose' parameter is deprecated"):
+        logging_config.handle_verbose_deprecation(False)
+    logger = logging.getLogger("dorado")
+    with caplog.at_level(logging.WARNING, logger="dorado"):
+        logger.warning("still visible after verbose=False")
+    assert "still visible after verbose=False" in caplog.text
 
 
 def test_env_var_unset(monkeypatch, clean_logger):

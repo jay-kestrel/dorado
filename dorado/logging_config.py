@@ -99,25 +99,35 @@ def setup_logging(level="WARNING", handler=None):
 
 
 def handle_verbose_deprecation(verbose):
-    """Map deprecated verbose parameter to logging level.
+    """Map deprecated verbose parameter to logging behavior.
 
     This function provides backward compatibility for the deprecated
-    `verbose` parameter. It configures the logger based on the verbose
-    value and emits a deprecation warning.
+    `verbose` parameter. It is a non-persistent shim: unlike
+    :func:`setup_logging`, a call never permanently reconfigures the
+    global ``dorado`` logger. Passing True (or None, which the API
+    docstrings document as equivalent to True) raises the logger to
+    INFO so legacy verbose runs still show detail. Passing False no
+    longer forces the logger to ERROR — the currently configured level
+    is left in place, so warnings remain visible after the call. Users
+    who want a quieter logger should call :func:`setup_logging`
+    directly.
 
     **Inputs** :
 
         verbose : `bool` or `None`
-            Legacy verbose parameter. If True, sets logging to INFO level.
-            If False, sets logging to ERROR level. If None, does nothing.
+            Legacy verbose parameter. If True or None, sets logging to
+            INFO level. If False, leaves the currently configured
+            level (WARNING by default) untouched.
 
     """
-    if verbose is not None:
-        warnings.warn(
-            "The 'verbose' parameter is deprecated. "
-            "Use dorado.setup_logging() instead.",
-            DeprecationWarning,
-            stacklevel=3
-        )
-        level = "INFO" if verbose else "ERROR"
-        setup_logging(level)
+    if verbose is None:
+        # docstrings promise None is equivalent to True (INFO level)
+        verbose = True
+    warnings.warn(
+        "The 'verbose' parameter is deprecated. "
+        "Use dorado.setup_logging() instead.",
+        DeprecationWarning,
+        stacklevel=3
+    )
+    if verbose:
+        setup_logging("INFO")

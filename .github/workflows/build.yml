@@ -100,6 +100,41 @@ jobs:
         python unsteady_example.py
 
 
+  conda:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        persist-credentials: false
+    - name: Setup conda
+      uses: conda-incubator/setup-miniconda@v3
+      with:
+        miniforge-version: latest
+        python-version: "3.12"
+    - name: Install conda-build
+      shell: bash -el {0}
+      run: conda install -y conda-build
+    - name: Build conda recipe
+      shell: bash -el {0}
+      run: conda-build -c conda-forge conda/
+
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        persist-credentials: false
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - name: Install ruff
+      run: pip install ruff
+    - name: Lint with ruff
+      run: ruff check dorado/ tests/
+
+
   docs:
     runs-on: ubuntu-latest
     steps:

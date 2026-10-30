@@ -254,8 +254,10 @@ def unsteady_plots(dx, Np_tracer, seed_xloc, seed_yloc, num_steps, timestep,
         if i == 0:
             particle.generate_particles(Np_tracer, seed_xloc, seed_yloc)
         else:
+            # walk_data is always bound here: i == 0 takes the branch
+            # above first, and run_iteration assigns it each iteration
             particle.generate_particles(0, [], [], method='random',
-                                        previous_walk_data=walk_data)
+                                        previous_walk_data=walk_data)  # noqa: F821
 
         walk_data = particle.run_iteration(target_time=target_times[i])
 

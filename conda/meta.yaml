@@ -1,38 +1,44 @@
-{% set data = load_setup_py_data() %}
+# Recipe metadata is read from pyproject.toml (the single source of truth
+# since versioning moved there in 21e8414); load_file_data parses TOML
+# directly, so the recipe no longer depends on a setup.py.
+{% set pyproject = load_file_data("pyproject.toml") %}
+{% set version = pyproject["project"]["version"] %}
+{% set url = pyproject["project"]["urls"]["Source"] %}
+{% set description = pyproject["project"]["description"] %}
 
 package:
   name: dorado
-  version: {{ data['version'] }}
+  version: {{ version }}
 
 source:
   path: ..
 
 build:
   number: 0
-  script: python setup.py install --single-version-externally-managed --record=record.txt
+  script: python -m pip install . -vv --no-deps
 
 requirements:
-  build:
-    - python
-    - numpy>=1.11.1
-    - scipy
-    - matplotlib
-    - future
-    - tqdm
-
+  host:
+    - python >=3.11
+    - pip
+    # conda-build runs pip without build isolation, so the PEP 517 backend
+    # must be present in the host env
+    - setuptools
+    - setuptools_scm
   run:
-    - python
-    - numpy>=1.11.1
+    - python >=3.11
+    - numpy
     - scipy
     - matplotlib
-    - future
     - tqdm
 
 test:
   imports:
     - dorado
+    - dorado.example_data
 
 about:
-  home: {{ data['url'] }}
-  license: {{ data['license'] }}
-summary: {{ data['description'] }}
+  home: {{ url }}
+  license: MIT
+  license_file: LICENSE
+  summary: {{ description }}

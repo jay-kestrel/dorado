@@ -29,7 +29,6 @@ dependencies = [
 	"numpy",
     "matplotlib",
     "scipy",
-    "future",
     "tqdm"
 ]
 
@@ -68,3 +67,7 @@ features = ["pyo3/extension-module"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
+
+[tool.ruff.lint]
+# minimal bug-hunter set for a legacy codebase; broaden incrementally
+select = ["E9", "F63", "F7", "F82"]

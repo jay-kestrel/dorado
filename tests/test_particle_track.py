@@ -16,7 +16,9 @@ import numpy as np
 class pobj():
     pass
 
-params = pobj
+# instantiate so the deep-copied goodparams below is an actual isolated
+# copy — deepcopy of a class object returns the same class
+params = pobj()
 seed_xloc = [1]
 seed_yloc = [1]
 Np_tracer = 1
@@ -539,7 +541,7 @@ def test_exposure_time_y():
     exp_times = particle_track.exposure_time(walk_data, roi)
     assert exp_times[0] == 4.0
 
-def test_exposure_time_y():
+def test_exposure_time_x():
     walk_data = dict()
     walk_data['yinds'] = [[1, 1, 1, 1, 1]]
     walk_data['xinds'] = [[1, 2, 3, 4, 5]]
