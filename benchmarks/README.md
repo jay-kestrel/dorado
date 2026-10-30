@@ -135,12 +135,82 @@ steps. The seeded golden gate (one particle at x=16, y=140, 3 iterations)
 reproduces the `tests/test_examplecases.py` travel times to rel=1e-6; the
 tiny gap to the exact printed values is the fixture's float64 cast, not drift.
 
+## Harness runner (python vs C vs Rust)
+
+`benchmarks/run_harness.py` is the head-to-head rig: all three implementations
+run the same normalized fixture bytes, and the output is a machine-readable
+`results.json` per workload.
+
+```sh
+python benchmarks/run_harness.py --input bench/fixture_rcm/ --out bench/out/harness/
+python benchmarks/run_harness.py --particles 500 --iterations 20 --repeats 3
+```
+
+Workload defaults (particles, iterations, seed, seeding region) come from the
+fixture manifest, so the harness and `run_reference.py` benchmark the same
+workload. Both native binaries are built fresh — CMake Release for `dorado_c`,
+cargo release for `dorado_rust` (cargo must be on `PATH`) — unless
+`--c-binary`/`--rust-binary` point at prebuilt ones.
+
+**Parity gate.** Repetition 1 of each implementation produces `walk_data.json`;
+the C and Rust bytes must equal the Python reference's bytes exactly. Any
+mismatch fails the run (nonzero exit, parity `fail` in `results.json`, the
+first differing byte reported) and is never resolved by loosening tolerance —
+walk data is byte-exact by design, so a mismatch is a port bug. Repetition-1
+walk files are kept under `<out>/<impl>/rep1/` as parity evidence; later reps
+keep only their `timing.json`.
+
+**Timing contract.** One untimed warmup per implementation (same code paths,
+bounded at 200 particles × 5 iterations) precedes the timed repetitions.
+Compute seconds come from each implementation's own clock: the port binaries
+report `timing.json` seconds with fixture load and JSON write excluded; the
+Python reference is timed in-process by `run_reference.run_reference` over the
+same region. Wall time around each whole port process (startup + I/O included)
+is recorded separately as `all_wall_seconds`/`median_wall_seconds` — on the
+default workload the walk-data JSON write dominates port wall time, which is
+exactly the distinction the two numbers exist to show. dorado has no JIT, so
+there is no cold-start line item. Headline numbers are warm medians of
+`--repeats` (default 5); every sample is kept in `all_seconds`.
+
+**results.json.** One file per harness run: `workload` (fixture path + hashes,
+particles, iterations, seed, seeding box, repetitions, warmup size, binary
+paths), `provenance` (git revision + dirty flag, platform/machine,
+Python/NumPy versions, C compiler and Rust toolchain as reported by the port
+binaries, binary sha256s, `DORADO_BACKEND`), `results` per implementation
+(`all_seconds`, `median_seconds`, `all_wall_seconds`,
+`median_wall_seconds`, `seconds_per_iteration`, `appended_steps`, `parity`),
+and `speedup_vs_python` (compute medians). Fixed-seed repetitions must agree
+on appended steps — a disagreement aborts the run rather than producing
+misleading timings.
+
+**Environment guards.** `DORADO_BACKEND` overrides the `Particles`
+constructor argument (`particle_track._resolve_backend`), so the harness
+refuses to run with it set to anything but `python` — otherwise the "Python
+reference" could silently be the native kernel. `DORADO_COBOL=1` is refused
+for the same reason.
+
+First harness run on 2026-10-30 (sandbox, commit `7477df0` plus an uncommitted
+tree, 5 reps, default workload — 10,000 particles × 100 iterations, 979,519
+appended steps for every implementation, parity PASS on both ports):
+
+| Implementation | Median compute (s) | s/iteration | Median wall (s) |
+| --- | ---: | ---: | ---: |
+| python | 21.845 | 0.21845 | 21.845 |
+| c | 0.182 | 0.00182 | 1.615 |
+| rust | 0.201 | 0.00201 | 1.430 |
+
+Speedups vs python (compute medians): c ≈ 120x, rust ≈ 109x. Python's wall and
+compute coincide because the in-process clock excludes only JSON writing,
+while the ports' wall includes process startup, fixture load, and a ~39 MB
+walk-data write. Full provenance in the run's `results.json`.
+
 ## Local checks
 
 ```sh
 pytest -q
 ruff check --isolated --select E4,E7,E9,F,I,UP --target-version py311 benchmarks \
-    tests/test_bench_routing.py tests/test_benchmark_fixtures.py tests/test_benchmark_reference.py
+    tests/test_bench_routing.py tests/test_benchmark_fixtures.py \
+    tests/test_benchmark_reference.py tests/test_benchmark_harness.py
 ```
 
 This is backend-only benchmarking and CI work: no rendered UI, visual state, or
