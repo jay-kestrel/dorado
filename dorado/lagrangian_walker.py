@@ -12,6 +12,85 @@ from numpy.random import random
 from numpy import maximum, nansum
 
 
+# Named particle "kinds" and their transport behavior presets.
+#
+# These are illustrative defaults: users may inspect, override, or extend
+# this dict with their own kinds (any key present here is a valid
+# particle_type for generate_particles). Each kind maps to a dict with
+# three fields:
+#
+#   travel_time_multiplier : multiplier applied to the particle's travel
+#                            time each step (>1 moves slower, <1 faster)
+#   diffusion_multiplier   : multiplier applied to the particle's diffusion
+#                            term each step (>1 more spread, <1 less)
+#   deposition_probability : per-step probability (0-1) that a moving
+#                            particle settles permanently and stops moving
+KIND_PRESETS = {
+    'sand': {'travel_time_multiplier': 1.2,
+             'diffusion_multiplier': 0.5,
+             'deposition_probability': 0.02},
+    'mud': {'travel_time_multiplier': 1.0,
+            'diffusion_multiplier': 1.0,
+            'deposition_probability': 0.005},
+    'plankton': {'travel_time_multiplier': 1.0,
+                 'diffusion_multiplier': 1.2,
+                 'deposition_probability': 0.0},
+}
+
+
+def effective_multipliers(particle_size, particle_type):
+    """Derive per-particle transport behavior from size and kind.
+
+    Combines an optional numeric particle size with an optional named kind
+    (a key of :obj:`KIND_PRESETS`) into the per-particle multipliers used
+    by :obj:`calc_travel_times` and the per-step deposition draw.
+
+    A size on its own scales transport: bigger particles move slower
+    (travel time multiplied by the size) and diffuse less (diffusion term
+    multiplied by 1/size). A kind on its own applies its preset
+    multipliers and deposition probability. When both are given for a
+    particle, the size and preset multipliers multiply and the deposition
+    probability comes from the preset. A size of exactly 1.0 with no kind
+    reduces to the legacy (unmodified) behavior.
+
+    **Inputs** :
+
+        particle_size : `float`, `int`, or `None`
+            Optional numeric particle size (must be > 0 when given).
+
+        particle_type : `str` or `None`
+            Optional name of a kind in :obj:`KIND_PRESETS`.
+
+    **Outputs** :
+
+        velocity_mult : `float`
+            Multiplier to apply to the particle's travel time.
+
+        diff_mult : `float`
+            Multiplier to apply to the particle's diffusion term.
+
+        deposition_probability : `float`
+            Per-step probability that the particle settles permanently.
+
+    """
+    if particle_type is not None:
+        preset = KIND_PRESETS[particle_type]
+        velocity_mult = preset['travel_time_multiplier']
+        diff_mult = preset['diffusion_multiplier']
+        deposition_probability = preset['deposition_probability']
+    else:
+        velocity_mult = 1.0
+        diff_mult = 1.0
+        deposition_probability = 0.0
+
+    if particle_size is not None:
+        size = float(particle_size)
+        velocity_mult = velocity_mult*size
+        diff_mult = diff_mult*(1.0/size)
+
+    return velocity_mult, diff_mult, deposition_probability
+
+
 def random_pick_seed(choices, probs=None):
     """Randomly pick a number from array of choices.
 
@@ -312,7 +391,8 @@ def step_update(new_cell, distances, dx):
     return dist
 
 
-def calc_travel_times(Particles, new_cell, ind, new_ind, dist):
+def calc_travel_times(Particles, new_cell, ind, new_ind, dist,
+                      velocity_mult=1.0, diff_mult=1.0):
     """Calculate travel time for particle to get to the new location.
 
     Function to calculate the travel time for the particle to get from the
@@ -336,6 +416,16 @@ def calc_travel_times(Particles, new_cell, ind, new_ind, dist):
         dist : `float`
             Distance between current (old) and new particle location
 
+        velocity_mult : `float`, optional
+            Multiplier applied to the computed travel time, e.g. derived
+            from the particle's size/kind. Default value of 1.0 leaves the
+            travel time unmodified.
+
+        diff_mult : `float`, optional
+            Multiplier applied to the diffusion term, e.g. derived from
+            the particle's size/kind. Default value of 1.0 leaves the
+            diffusion term unmodified.
+
     **Outputs** :
 
         trav_time : `float`
@@ -353,7 +443,7 @@ def calc_travel_times(Particles, new_cell, ind, new_ind, dist):
         # Compute diffusion term
         # (sample uniform distribution centered at 0 and diff_coeff wide)
         if Particles.diff_coeff > 0:
-            diff = (0.5 - random())*Particles.diff_coeff
+            diff = (0.5 - random())*Particles.diff_coeff*diff_mult
         else:
             diff = 0.0
         # Compute distance traveled in the orientation of mean flow path
@@ -362,6 +452,8 @@ def calc_travel_times(Particles, new_cell, ind, new_ind, dist):
                                   Particles.velocity_angle[ind[0], ind[1]]))
         # Compute average velocity over step
         trav_time = 0.5*projected_dist*(1/old_vel + 1/new_vel)*(1+diff)
+        # scale the travel time by the per-particle velocity multiplier
+        trav_time = trav_time*velocity_mult
     else:
         trav_time = 0  # particle did not move
     return trav_time
@@ -503,6 +595,12 @@ def particle_stepper(Particles, current_inds, travel_times, start_optional):
         start_optional: 'dict of lists'
             A dictionary of lists of optional user inputs for the particle stepper. Options are shown in the particles object documentation.
         
+        Persistent per-particle attributes (the 'particle_size',
+        'particle_type', and 'deposited' keys stored in walk_data) are also
+        passed through here when present: they are not resampled from any
+        grid, their values are carried from step to step, and 'deposited'
+        may flip from 0 to 1 when a particle settles. Any other keys that
+        are not recognized grid variables are passed through unchanged.
 
     **Outputs** :
 
@@ -547,10 +645,53 @@ def particle_stepper(Particles, current_inds, travel_times, start_optional):
     # transform from np array to list
     new_inds = new_inds.tolist()
 
+    # Derive per-particle transport behavior from the persistent
+    # attributes when they are in play (multipliers are re-derived from
+    # size/type at read time, so walk_data stores size+type only)
+    sizes = start_optional.get('particle_size')
+    types = start_optional.get('particle_type')
+    deposited = start_optional.get('deposited')
+
+    n_particles = len(new_inds)
+    if sizes is not None or types is not None:
+        behavior = [effective_multipliers(s, t) for s, t in
+                    zip(sizes if sizes is not None else [None]*n_particles,
+                        types if types is not None else [None]*n_particles)]
+        velocity_mults = [b[0] for b in behavior]
+        diff_mults = [b[1] for b in behavior]
+        deposition_probs = [b[2] for b in behavior]
+    else:
+        velocity_mults = [1.0]*n_particles
+        diff_mults = [1.0]*n_particles
+        deposition_probs = [0.0]*n_particles
+
+    # Deposition: a particle that has settled does not move (same handling
+    # as a particle at a boundary), and a moving, non-boundary particle may
+    # settle this step when a uniform draw falls below its deposition
+    # probability. Once settled, the flag stays 1 for the rest of the run.
+    new_deposited = None
+    if sizes is not None or types is not None or deposited is not None:
+        new_deposited = list(deposited) if deposited is not None \
+            else [0]*n_particles
+        for i in range(n_particles):
+            moved = (new_inds[i][0] != inds[i][0]
+                     or new_inds[i][1] != inds[i][1])
+            if new_deposited[i] == 1:
+                new_inds[i][0] = inds[i][0]
+                new_inds[i][1] = inds[i][1]
+            elif (deposition_probs[i] > 0 and moved
+                    and np.random.uniform() < deposition_probs[i]):
+                new_inds[i][0] = inds[i][0]
+                new_inds[i][1] = inds[i][1]
+                new_deposited[i] = 1
+
     # add the travel times
-    temp_travel = list(map(lambda w, x, y, z:
-                           calc_travel_times(Particles, w, x, y, z),
-                           new_cells, current_inds, new_inds, dist))
+    temp_travel = list(map(lambda w, x, y, z, vm, dm:
+                           calc_travel_times(Particles, w, x, y, z,
+                                             velocity_mult=vm,
+                                             diff_mult=dm),
+                           new_cells, current_inds, new_inds, dist,
+                           velocity_mults, diff_mults))
     # add to existing times
     travel_times = [travel_times[i] + temp_travel[i]
                     for i in range(0, len(travel_times))]
@@ -558,7 +699,11 @@ def particle_stepper(Particles, current_inds, travel_times, start_optional):
 
     # Optional variables
     updated_optional = {}
-    
+
+    # the (possibly updated) deposited flags are an output of this step
+    if new_deposited is not None:
+        updated_optional['deposited'] = new_deposited
+
     if ROI is not None:
         updated_optional['roi_flag'] = [1 if ROI[x, y] == 1 else 0 for x, y in new_inds]
 
@@ -567,5 +712,10 @@ def particle_stepper(Particles, current_inds, travel_times, start_optional):
             if var in Particles.available_particle_vars:
                 grid = Particles.available_particle_vars[var]
                 updated_optional[var] = [grid[x, y] for x, y in new_inds]
+            else:
+                # pass through any other keys unchanged (e.g. the
+                # persistent per-particle attributes) so callers can
+                # append them rather than raising a KeyError
+                updated_optional[var] = list(start_optional[var])
 
     return new_inds, travel_times, updated_optional
