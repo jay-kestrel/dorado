@@ -48,7 +48,7 @@ impl Mt19937 {
         self.state[0] = s;
         for i in 1..N {
             let prev = self.state[i - 1];
-            self.state[i] = 1812_433_253u32
+            self.state[i] = 1_812_433_253u32
                 .wrapping_mul(prev ^ (prev >> 30))
                 .wrapping_add(i as u32);
         }
@@ -64,8 +64,7 @@ impl Mt19937 {
         }
         for kk in (N - M)..(N - 1) {
             let y = (self.state[kk] & UPPER_MASK) | (self.state[kk + 1] & LOWER_MASK);
-            self.state[kk] =
-                self.state[kk + M - N] ^ (y >> 1) ^ mag01[(y & 1) as usize];
+            self.state[kk] = self.state[kk + M - N] ^ (y >> 1) ^ mag01[(y & 1) as usize];
         }
         let y = (self.state[N - 1] & UPPER_MASK) | (self.state[0] & LOWER_MASK);
         self.state[N - 1] = self.state[M - 1] ^ (y >> 1) ^ mag01[(y & 1) as usize];
@@ -91,7 +90,6 @@ impl Mt19937 {
     ///
     /// Both multiplications are exact powers of two, so the result is the
     /// correctly-rounded IEEE-754 value — bit-identical to NumPy's C.
-    #[allow(clippy::did_you_mean)] // name mirrors numpy.random.random_sample
     pub fn random_sample(&mut self) -> f64 {
         let a = (self.next_u32() >> 5) as f64;
         let b = (self.next_u32() >> 6) as f64;

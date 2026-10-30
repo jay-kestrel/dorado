@@ -6,7 +6,9 @@
 //! CI, and the `dorado._native` import path are exercised end to end
 //! (spec deliverable D6).
 
+pub mod fields;
 pub mod rng;
+pub mod weight;
 
 fn kernel_version_impl() -> &'static str {
     env!("CARGO_PKG_VERSION")
