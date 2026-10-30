@@ -186,3 +186,32 @@ def test_deprecation_warning_fires_once_per_public_call():
         and "The 'verbose' parameter is deprecated" in str(w.message)
     ]
     assert len(deprecations) == 1
+
+
+def test_get_time_state_warns_once_despite_loop_iterations():
+    # The deprecation bridge is hoisted to function-entry scope: one
+    # multi-particle call emits exactly one DeprecationWarning no matter
+    # how many particles take the never-reached-target branch, and the
+    # per-particle loop output is unchanged.
+    from dorado import routines
+
+    walk_data = {
+        'xinds': [[0, 1, 2]] * 5,
+        'yinds': [[5, 6, 7]] * 5,
+        'travel_times': [[0.0, 1.0, 2.0]] * 5,
+    }
+    target_time = 100.0  # every particle misses the target
+
+    baseline = routines.get_time_state(walk_data, target_time)
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        result = routines.get_time_state(walk_data, target_time, verbose=True)
+
+    deprecations = [
+        w for w in caught
+        if issubclass(w.category, DeprecationWarning)
+        and "The 'verbose' parameter is deprecated" in str(w.message)
+    ]
+    assert len(deprecations) == 1
+    assert result == baseline
