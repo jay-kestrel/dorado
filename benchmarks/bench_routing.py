@@ -20,14 +20,16 @@ from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import patch
 
+import numpy as np
+
 # Prefer this checkout, not an unrelated installed dorado distribution.
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-import numpy as np
-
-from dorado import lagrangian_walker as lw
-from dorado.particle_track import Particles, modelParams
+# Imported after the sys.path bootstrap so the script runs from a source
+# checkout without installing the package.
+from dorado import lagrangian_walker as lw  # noqa: E402
+from dorado.particle_track import Particles, modelParams  # noqa: E402
 
 
 @dataclass

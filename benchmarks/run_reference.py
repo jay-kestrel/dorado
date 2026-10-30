@@ -24,13 +24,15 @@ import time
 from datetime import UTC, datetime
 from pathlib import Path
 
+import numpy as np
+
 # Prefer this checkout, not an unrelated installed dorado distribution.
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-import numpy as np
-
-from dorado.particle_track import Particles, modelParams
+# Imported after the sys.path bootstrap so the script runs from a source
+# checkout without installing the package.
+from dorado.particle_track import Particles, modelParams  # noqa: E402
 
 # Default seeding regions per field, following example_data/define_params.py
 # and the seed rows/columns of the routing benchmark table.
