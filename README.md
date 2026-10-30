@@ -37,6 +37,23 @@ Installation using `conda` via `conda-forge` is also supported:
 
 For additional installation options and instructions, refer to the [documentation](https://passah2o.github.io/dorado/install/index.html).
 
+### Configuring log output
+dorado logs through the standard `logging` module under the `dorado` logger. The `DORADO_LOG_LEVEL` environment variable controls log visibility at import time:
+
+- **Unset** (default): the package attaches no handler and leaves the logger at Python's default level, so WARNING-and-above records (warnings and errors) still reach stderr while informational narration stays silent.
+- **Set** to `DEBUG`, `INFO`, `WARNING`, or `ERROR`: the `dorado` logger is configured at that level with a handler writing to stderr. For example:
+
+        DORADO_LOG_LEVEL=INFO python my_script.py
+
+An invalid value does not fail the import — dorado logs a warning naming the bad value and falls back to `WARNING`.
+
+Logging can also be configured programmatically at any time:
+
+    import dorado
+    dorado.setup_logging("INFO")
+
+The deprecated `verbose` parameter on dorado's routines is still accepted, but new code should configure logging with `DORADO_LOG_LEVEL` or `setup_logging()` instead.
+
 ## Contributing
 We welcome contributions to the dorado project. Please open an issue or a pull request if there is functionality you would like to see or propose. Refer to our [contributing guide](https://passah2o.github.io/dorado/misc/contributing.html) for more information.
 
