@@ -544,6 +544,15 @@ def particle_stepper(Particles, current_inds, travel_times, start_optional):
     new_inds[zero_dist] = np.array(inds, dtype=np.int32)[zero_dist]
     # see if the indices are at boundaries
     new_inds = check_for_boundary(new_inds, inds, Particles.cell_type)
+    # freeze any particle whose proposed step leaves the domain: when
+    # the border cells are water there is no -1 edge for the check
+    # above to react to, and an unchecked step would walk off-grid and
+    # silently wrap through every downstream index lookup
+    shape = np.asarray(Particles.cell_type).shape
+    current = np.array(inds, dtype=np.int32)
+    out_of_bounds = ((new_inds[:, 0] < 0) | (new_inds[:, 0] >= shape[0]) |
+                     (new_inds[:, 1] < 0) | (new_inds[:, 1] >= shape[1]))
+    new_inds[out_of_bounds] = current[out_of_bounds]
     # transform from np array to list
     new_inds = new_inds.tolist()
 

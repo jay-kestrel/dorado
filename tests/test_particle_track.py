@@ -8,6 +8,7 @@ import sys, os
 sys.path.append(os.path.realpath(os.path.dirname(__file__)+"/.."))
 
 from dorado import particle_track
+from dorado import lagrangian_walker
 from dorado import parallel_routing
 import numpy as np
 
@@ -922,4 +923,59 @@ def test_velocity_floor_preserves_sign():
     # pointing with the flow instead of rotating ~126 degrees
     assert particle.u[2, 2] < 0
     assert particle.velocity_angle[2, 2] > 0
+
+
+def test_stepper_freezes_out_of_domain_step():
+    """A step off an all-water domain must freeze, not record a wrap.
+
+    Review probe (F1): a particle sitting on a border cell of a domain
+    with no -1 edge markers has an all-zero weight row, so random_pick
+    deterministically returns slot 0 (NW) and steps to a negative row;
+    nothing bounds-checked the result.
+    """
+    params = particle_track.modelParams()
+    params.dx = 1.
+    params.model = 'DeltaRCM'
+    params.depth = np.ones((6, 6))
+    params.stage = np.ones((6, 6))
+    params.qx = np.zeros((6, 6))
+    params.qy = np.ones((6, 6))
+    params.cell_type = np.zeros((6, 6))  # water everywhere: no -1 edges
+    particle = particle_track.Particles(params)
+    new_inds, travel_times, _ = lagrangian_walker.particle_stepper(
+        particle, [[0, 2]], [0.], {})
+    assert new_inds[0] == [0, 2]
+    assert 0 <= new_inds[0][0] < 6
+    assert 0 <= new_inds[0][1] < 6
+
+
+def test_water_bordered_domain_no_escape():
+    """Particles must never walk off a water-bordered domain.
+
+    Regression for review finding F1 (the 498/500 seeded-escape probe):
+    on a 6x6 all-water domain with stage sloped downhill-outward,
+    unpatched code let particles march through the rim into negative
+    indices, where every downstream lookup wrapped silently and
+    corrupted the spatial statistics.
+    """
+    params = particle_track.modelParams()
+    params.dx = 1.
+    params.model = 'DeltaRCM'
+    params.depth = np.ones((6, 6))
+    params.qx = np.zeros((6, 6))
+    params.qy = np.ones((6, 6))
+    params.cell_type = np.zeros((6, 6))  # all water: no -1 edge markers
+    params.gamma = 1.0  # pure stage-gradient walk, drifts outward
+    ii, jj = np.meshgrid(np.arange(6), np.arange(6), indexing='ij')
+    # high center, falling off toward every edge: downhill-outward
+    params.stage = 2.0 - 0.25 * (np.abs(ii - 2.5) + np.abs(jj - 2.5))
+    particle = particle_track.Particles(params)
+    np.random.seed(0)
+    particle.generate_particles(500, [3] * 500, [3] * 500)
+    walk = {}
+    for _ in range(8):
+        walk = particle.run_iteration()
+    for path in walk['xinds'] + walk['yinds']:
+        assert min(path) >= 0
+        assert max(path) < 6
 
