@@ -1555,10 +1555,17 @@ def nourishment_area(walk_data, raster_size, sigma=0.7, clip=99.5):
     if sigma > 0:
         from scipy.ndimage import gaussian_filter
 
-    # Measure visit frequency
+    # Measure visit frequency, skipping (0, 0) entries: that index is the
+    # walker's reserved parked-particle sentinel state (particle_stepper
+    # refuses to route a particle whose current index is (0, 0)), so those
+    # entries are not real cell visits and would otherwise inflate the
+    # corner-cell count
     visit_freq = np.zeros(raster_size)
     for ii in list(range(len(walk_data['xinds']))):
         for jj in list(range(len(walk_data['xinds'][ii]))):
+            if walk_data['xinds'][ii][jj] == 0 \
+                    and walk_data['yinds'][ii][jj] == 0:
+                continue
             visit_freq[walk_data['xinds'][ii][jj],
                        walk_data['yinds'][ii][jj]] += 1
 
