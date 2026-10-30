@@ -294,6 +294,21 @@ def make_weight(Particles):
     # if it's a dead end with only nans and 0's, choose deepest cell
     zero_weights = tile_domain_array((np.nansum(weight, axis=2) <= 0))
     deepest_cells = (depth_ind == tile_domain_array(np.max(depth_ind,axis=2)))
+    # under stranding_handling = 'park', permanent land is not a valid
+    # fallback destination while any non-land cell exists in the window:
+    # pick the deepest non-land cell instead, and only fall back to the
+    # legacy choice when the whole window is land
+    if Particles.stranding_handling == 'park':
+        not_land = (ct_ind != 2)
+        any_not_land = np.any(not_land, axis=2)
+        deepest_dry_aware = \
+            (depth_ind == tile_domain_array(np.max(np.where(not_land,
+                                                            depth_ind,
+                                                            -np.inf),
+                                                   axis=2)))
+        deepest_cells = ((deepest_dry_aware & not_land) |
+                         (deepest_cells &
+                          tile_domain_array(~any_not_land)))
     choose_deep_cells = (zero_weights & deepest_cells)
     weight[choose_deep_cells] = 1.0
 
@@ -582,6 +597,77 @@ def steep_descent(probs):
     return idx
 
 
+def stranding_park_decisions(Particles, inds_tuple, start_optional):
+    """Evaluate the park-while-dry stranding state machine per particle.
+
+    Under stranding_handling = 'park', a particle parks (does not move)
+    whenever its current cell is dry or is permanent land (cell_type ==
+    2). A stranded particle whose cell is wet again is released by rule:
+    'immediate' releases it on the first step with a wet cell, 'rest'
+    releases it once the accumulated stranded time reaches
+    Particles.rest_time, and 'probability' releases it with per-step
+    probability Particles.entrain_prob. Release is only ever evaluated
+    from a wet cell, so re-wetting is a necessary condition for release
+    under every rule.
+
+    **Inputs** :
+
+        Particles : :obj:`dorado.particle_track.Particles`
+            A :obj:`dorado.particle_track.Particles` object with
+            stranding_handling = 'park'.
+
+        inds_tuple : `list`
+            List of tuples (x,y) of the current particle locations.
+
+        start_optional : `dict`
+            Dictionary of lists of optional variable values, one per
+            particle, carrying the previous step's 'stranded' flag and
+            'stranded_time' total. Missing or None values are treated
+            as never stranded.
+
+    **Outputs** :
+
+        park_mask : `list`
+            List of bool, True wherever the particle parks this step.
+
+        stranded_times : `list`
+            List of float with the cumulative stranded time after this
+            step (each parked step books Particles.stranding_dt).
+
+    """
+    prev_stranded = start_optional.get('stranded',
+                                       [None]*len(inds_tuple))
+    prev_times = start_optional.get('stranded_time',
+                                    [None]*len(inds_tuple))
+    park_mask = []
+    stranded_times = []
+    for i, (x, y) in enumerate(inds_tuple):
+        stranded_time = prev_times[i] if prev_times[i] is not None else 0.0
+        stranded = prev_stranded[i] if prev_stranded[i] is not None else 0
+        wet = (Particles.depth[x, y] > Particles.dry_depth
+               and Particles.cell_type[x, y] != 2)
+        park = True
+        if wet:
+            if not stranded:
+                # wet and not stranded: free to move
+                park = False
+            elif Particles.stranding_release == 'immediate':
+                park = False
+            elif Particles.stranding_release == 'rest':
+                # held while wet until the stranded clock reaches the
+                # rest time
+                park = stranded_time < Particles.rest_time
+            else:  # 'probability'
+                # per-step Bernoulli re-entrainment trial
+                park = not (random() < Particles.entrain_prob)
+        park_mask.append(park)
+        if park:
+            stranded_times.append(stranded_time + Particles.stranding_dt)
+        else:
+            stranded_times.append(stranded_time)
+    return park_mask, stranded_times
+
+
 def particle_stepper(Particles, current_inds, travel_times, start_optional):
     """Step particles a single iteration.
 
@@ -624,9 +710,21 @@ def particle_stepper(Particles, current_inds, travel_times, start_optional):
     inds = current_inds  # get indices as coordinates in the domain
     # split the indices into tuples
     inds_tuple = [(inds[i][0], inds[i][1]) for i in range(len(inds))]
+
+    # park-while-dry stranding state machine: decide per particle
+    # whether it parks this step; parked particles stay in place without
+    # consulting the weight window, and book stranding_dt of travel time
+    if Particles.stranding_handling == 'park':
+        park_mask, stranded_times = \
+            stranding_park_decisions(Particles, inds_tuple, start_optional)
+    else:
+        park_mask = [False]*len(inds_tuple)
+        stranded_times = None
+
     # for each particle index get the weights
     new_cells = [get_weight(Particles, x)
-                 if x != (0, 0) else 4 for x in inds_tuple]
+                 if (x != (0, 0) and not park_mask[i]) else 4
+                 for i, x in enumerate(inds_tuple)]
     # for each particle get the new index
     new_inds = list(map(lambda x, y:
                         calculate_new_ind(x, y, Particles.iwalk,
@@ -705,6 +803,10 @@ def particle_stepper(Particles, current_inds, travel_times, start_optional):
                                              diff_mult=dm),
                            new_cells, current_inds, new_inds, dist,
                            velocity_mults, diff_mults))
+    # parked steps book the stranding clock instead of a travel time
+    for i, parked in enumerate(park_mask):
+        if parked:
+            temp_travel[i] = Particles.stranding_dt
     # add to existing times
     travel_times = [travel_times[i] + temp_travel[i]
                     for i in range(0, len(travel_times))]
@@ -730,6 +832,14 @@ def particle_stepper(Particles, current_inds, travel_times, start_optional):
                 # persistent per-particle attributes) so callers can
                 # append them rather than raising a KeyError
                 updated_optional[var] = list(start_optional[var])
+
+    # under 'park' the stranding state rides the same optional-variable
+    # channel: the stranded flag of this step and the cumulative
+    # stranded time
+    if Particles.stranding_handling == 'park':
+        updated_optional['stranded'] = [1 if parked else 0
+                                        for parked in park_mask]
+        updated_optional['stranded_time'] = stranded_times
 
     return new_inds, travel_times, updated_optional
 

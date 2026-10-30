@@ -60,6 +60,37 @@ The travel time (:math:`{T_t}`) is then calculated based on this effective dista
 
 When :math:`{dc}` is 0, then the travel time calculation is based solely on the velocity field and deviation in particle path trajectory from the mean flow path. As the diffusivity coefficient is increased, the diffusivity present in travel time distributions will increase as well.
 
+Stranding and re-entrainment
+----------------------------
+In delta and tidal settings, particles routinely end up on dry cells: their
+cell dries as the tide falls, or a random-walk step lands them on land.
+`dorado` handles this with an explicit park-while-dry state, controlled by
+the ``stranding_handling`` parameter (``'park'`` by default).
+
+Under ``'park'``, a particle on a dry or land cell stops moving: it does not
+consult the routing weights, so it cannot wander across the exposed flat or
+onto permanent land, and the dry-cell hop that would otherwise book an
+absurd travel time through the floored-velocity calculation cannot occur.
+Each step spent parked is recorded in the walk data with an unchanged
+position, a travel time advanced by ``stranding_dt`` (the stranding clock),
+and a ``stranded`` flag of 1, so the time a particle spends stranded is
+measurable from the walk data alongside the cumulative ``stranded_time``.
+
+Once the particle's cell is wet again, release is governed by
+``stranding_release``: ``'immediate'`` (the passive-tracer default) releases
+the particle on the first wet step; ``'rest'`` holds it until it has been
+stranded for ``rest_time`` seconds of model time; and ``'probability'``
+releases it per step with probability ``entrain_prob``. Re-wetting is a
+necessary condition for every release, and the deepest-cell fallback never
+places a particle on permanent land while a non-land cell exists in its
+neighborhood.
+
+The default of ``'park'`` changes trajectories wherever particles previously
+wandered across dry flats. Setting ``stranding_handling`` to ``'none'``
+restores the exact legacy behavior, and no stranded variables are tracked
+under that option. Particles carried over from a walk recorded under
+``'none'`` have their stranded state zero-padded when the walk is continued.
+
 References
 ----------
 .. [1] Dagestad, K.-F., Röhrs, J., Breivik, Ø., and Ådlandsvik, B.: OpenDrift v1.0: a generic framework for trajectory modelling, Geosci. Model Dev., 11, 1405-1420, https://doi.org/10.5194/gmd-11-1405-2018, 2018.

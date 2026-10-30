@@ -914,8 +914,11 @@ def test_deposition_stops_all_particles_first_step(full_deposition_kind):
 def test_no_attrs_run_keeps_legacy_walk_data():
     """Runs without attributes gain no new keys and match the legacy walk."""
     walk_data = seeded_attribute_run()
-    # no attribute keys appear on a run that passed no attributes
-    assert sorted(walk_data.keys()) == ['travel_times', 'xinds', 'yinds']
+    # no attribute keys appear on a run that passed no attributes; the
+    # only additions are the stranding columns tracked by the park
+    # default (a documented behavior change, docs/source/background)
+    assert sorted(walk_data.keys()) == ['stranded', 'stranded_time',
+                                        'travel_times', 'xinds', 'yinds']
     # and the trajectories match the pre-change seeded result exactly
     assert walk_data['xinds'] == [[2, 2, 1],
                                   [3, 4, 5, 4, 4, 4, 3],
