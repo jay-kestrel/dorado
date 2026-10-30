@@ -1,8 +1,9 @@
 //! Minimal uncompressed-`.npy` reader (NumPy 1.0/2.0/3.0 header
-//! formats) for float32/float64 arrays. The harness normalizes npz
-//! fixtures to plain `.npy` bytes so the port needs no zip support;
-//! see rust/README.md (interface contract). Values widen to f64 —
-//! f32→f64 widening is exact, matching the reference's in-run casts.
+//! formats) for float32/float64 and int32/int64 arrays. The harness
+//! normalizes npz fixtures to plain `.npy` bytes so the port needs no
+//! zip support; see rust/README.md (interface contract). Values widen
+//! to f64 — f32→f64 widening is exact, matching the reference's
+//! in-run casts; cell-type integers are small enough to widen exactly.
 
 use std::fs;
 use std::path::Path;
@@ -57,10 +58,15 @@ fn parse_npy(bytes: &[u8]) -> Result<NpyArray, String> {
     let header = String::from_utf8_lossy(&bytes[dict_start..dict_end]);
 
     let descr = header_field(&header, "descr").ok_or("npy header missing descr")?;
-    let item_size = match descr.trim() {
-        "<f4" | "|f4" => 4usize,
-        "<f8" | "|f8" => 8usize,
-        other => return Err(format!("unsupported npy dtype {other} (need float32/64)")),
+    let dtype = descr.trim().to_owned();
+    let item_size = match dtype.as_str() {
+        "<f4" | "|f4" | "<i4" | "|i4" => 4usize,
+        "<f8" | "|f8" | "<i8" | "|i8" => 8usize,
+        other => {
+            return Err(format!(
+                "unsupported npy dtype {other} (need float32/64 or int32/64)"
+            ))
+        }
     };
     if header.contains("'fortran_order': True") || header.contains("\"fortran_order\": True") {
         return Err("fortran-order npy not supported (harness writes C order)".to_string());
@@ -77,10 +83,18 @@ fn parse_npy(bytes: &[u8]) -> Result<NpyArray, String> {
         ));
     }
 
-    let data = match item_size {
-        4 => payload[..n * 4]
+    let data: Vec<f64> = match dtype.as_str() {
+        "<f4" | "|f4" => payload[..n * 4]
             .chunks_exact(4)
             .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]) as f64)
+            .collect(),
+        "<i4" | "|i4" => payload[..n * 4]
+            .chunks_exact(4)
+            .map(|c| i32::from_le_bytes([c[0], c[1], c[2], c[3]]) as f64)
+            .collect(),
+        "<i8" | "|i8" => payload[..n * 8]
+            .chunks_exact(8)
+            .map(|c| i64::from_le_bytes([c[0], c[1], c[2], c[3], c[4], c[5], c[6], c[7]]) as f64)
             .collect(),
         _ => payload[..n * 8]
             .chunks_exact(8)

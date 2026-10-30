@@ -12,7 +12,13 @@ publish = false
 # Extension module Python imports as `dorado._native` (see module-name in
 # pyproject.toml). Must match the `#[pymodule]` name in src/lib.rs.
 name = "_native"
-crate-type = ["cdylib"]
+# rlib lets the bin driver and tests link the kernel without a cdylib.
+crate-type = ["cdylib", "rlib"]
+
+[[bin]]
+# Standalone parity/benchmark driver (spec: "dorado_rust --input ... --out ...").
+name = "dorado_rust"
+path = "src/bin/dorado_rust.rs"
 
 [dependencies]
 # extension-module is enabled by maturin at build time (see [tool.maturin]
