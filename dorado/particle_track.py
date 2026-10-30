@@ -83,6 +83,45 @@ class modelParams:
             Minimum depth for a cell to be considered wet,
             default value is 0.1m
 
+        stranding_handling : `str`
+            How particles stranded on dry or land cells are handled.
+            'park' (the default) parks a particle in place for as long
+            as its cell is dry or is permanent land (cell_type == 2),
+            records its stranded state in the walk data, and releases it
+            by rule (see `stranding_release`) once its cell is wet again.
+            Note this is a behavior change relative to previous versions
+            of dorado, in which particles on dry cells kept moving with
+            the standard random walk, including hops to the locally
+            deepest cell when no wet neighbor exists. Use 'none' to
+            reproduce the legacy behavior exactly (no stranded state is
+            tracked).
+
+        stranding_release : `str`
+            Rule for releasing a parked particle once its cell is wet
+            again. 'immediate' (default) releases the particle on the
+            first step with a wet cell. 'rest' releases it only after
+            `rest_time` of model time have accumulated while stranded
+            (steps spent parked on a wet cell still count toward the
+            rest time). 'probability' releases it with per-step
+            probability `entrain_prob`. Re-wetting is a necessary
+            condition for release under every rule.
+
+        rest_time : `float`
+            Model time (seconds) a particle must remain stranded before
+            it is released under `stranding_release = 'rest'`. Must be
+            >= 0. Default value is 0.0.
+
+        entrain_prob : `float`
+            Per-step re-entrainment probability used under
+            `stranding_release = 'probability'`. Must be in (0, 1].
+            Default value is 1.0.
+
+        stranding_dt : `float`
+            Model time (seconds) booked for every step a particle spends
+            parked. Parked steps advance the particle's travel time by
+            this amount, so it acts as the stranding clock. Must be > 0.
+            Default value is 1.0.
+
         cell_type : `numpy.ndarray`
             Array of the different types of cells in the domain where 2 = land,
             1 = channel, 0 = ocean, and -1 = edge. If not explicitly defined
@@ -123,6 +162,85 @@ class modelParams:
         self.u = None
         self.v = None
         self.verbose = None
+
+
+def check_stranding_params(params):
+    """Parse and validate the stranding handling parameters.
+
+    Reads the optional stranding parameters from a params object,
+    applies defaults for unspecified values, and raises a ValueError
+    for invalid values.
+
+    **Inputs** :
+
+        params : :obj:`dorado.particle_track.modelParams`
+            A :obj:`dorado.particle_track.modelParams` object, carrying
+            any subset of the stranding parameters (stranding_handling,
+            stranding_release, rest_time, entrain_prob, stranding_dt).
+
+    **Outputs** :
+
+        stranding : `dict`
+            Dictionary with the validated stranding_handling,
+            stranding_release, rest_time, entrain_prob, and
+            stranding_dt values.
+
+    """
+    handling = getattr(params, 'stranding_handling', None)
+    if handling is None:
+        handling = 'park'
+    if handling not in ['park', 'none']:
+        raise ValueError("stranding_handling must be 'park' or 'none',"
+                         " got: " + str(handling))
+
+    release = getattr(params, 'stranding_release', None)
+    if release is None:
+        release = 'immediate'
+    if release not in ['immediate', 'rest', 'probability']:
+        raise ValueError("stranding_release must be 'immediate', 'rest'"
+                         ", or 'probability', got: " + str(release))
+
+    rest_time = getattr(params, 'rest_time', None)
+    if rest_time is None:
+        rest_time = 0.0
+    try:
+        rest_time = float(rest_time)
+    except (TypeError, ValueError):
+        raise ValueError("rest_time must be a number >= 0, got: "
+                         + str(rest_time))
+    if np.isnan(rest_time) or rest_time < 0:
+        raise ValueError("rest_time must be >= 0, got: "
+                         + str(rest_time))
+
+    entrain_prob = getattr(params, 'entrain_prob', None)
+    if entrain_prob is None:
+        entrain_prob = 1.0
+    try:
+        entrain_prob = float(entrain_prob)
+    except (TypeError, ValueError):
+        raise ValueError("entrain_prob must be a number in (0, 1], got: "
+                         + str(entrain_prob))
+    if np.isnan(entrain_prob) or not (0 < entrain_prob <= 1):
+        raise ValueError("entrain_prob must be in (0, 1], got: "
+                         + str(entrain_prob))
+
+    stranding_dt = getattr(params, 'stranding_dt', None)
+    if stranding_dt is None:
+        stranding_dt = 1.0
+    try:
+        stranding_dt = float(stranding_dt)
+    except (TypeError, ValueError):
+        raise ValueError("stranding_dt must be a number > 0, got: "
+                         + str(stranding_dt))
+    if np.isnan(stranding_dt) or stranding_dt <= 0:
+        raise ValueError("stranding_dt must be > 0, got: "
+                         + str(stranding_dt))
+
+    return {'stranding_handling': handling,
+            'stranding_release': release,
+            'rest_time': rest_time,
+            'entrain_prob': entrain_prob,
+            'stranding_dt': stranding_dt}
 
 
 class Particles():
@@ -357,6 +475,17 @@ class Particles():
             logger.info("Using weighted random walk")
             self.steepest_descent = False
 
+        # Stranding/re-entrainment handling: under 'park' (the default)
+        # a particle on a dry or land cell parks in place and is released
+        # by rule once its cell is wet again; 'none' reproduces the
+        # legacy behavior exactly
+        stranding = check_stranding_params(params)
+        self.stranding_handling = stranding['stranding_handling']
+        self.stranding_release = stranding['stranding_release']
+        self.rest_time = stranding['rest_time']
+        self.entrain_prob = stranding['entrain_prob']
+        self.stranding_dt = stranding['stranding_dt']
+
         # DEFAULT PARAMETERS (Can be defined otherwise) #
 
         sqrt2 = np.sqrt(2)
@@ -475,6 +604,12 @@ class Particles():
 
         # Combine base + optional variables
         self.tracked_variables = self.base_walk_variables + self.particle_variables
+
+        # under 'park', the stranding state machine reports the stranded
+        # flag and the cumulative stranded time through the same channel;
+        # both are computed by the walker, not sampled from the grid
+        if self.stranding_handling == 'park':
+            self.tracked_variables += ['stranded', 'stranded_time']
 
     # function to clear walk data if you've made a mistake while generating it
     def clear_walk_data(self):
@@ -614,6 +749,10 @@ class Particles():
                 elif var in self.available_particle_vars:
                     grid_values = self.available_particle_vars[var]
                     optional_start_vars[var] = [[grid_values[x, y]] for x, y in zip(new_start_xindices, new_start_yindices)]
+                elif var in ('stranded', 'stranded_time'):
+                    # stranding state starts at zero for fresh seeds
+                    optional_start_vars[var] = [[0]
+                                                for _ in range(Np_tracer)]
                 else:
                     raise ValueError(f"Variable {var} is not a recognized variable to track. Available variables are: {list(self.available_particle_vars.keys())} and 'roi_flag' (if roi_grid is provided).")
 
@@ -636,6 +775,11 @@ class Particles():
                 if var in self.walk_data:
                     internal_var = self.walk_data[var]
                     optional_start_vars[var] = internal_var + new_var_list
+                elif var in ('stranded', 'stranded_time'):
+                    # walk data predates stranding tracking: pad with
+                    # zeros so the list stays aligned per particle
+                    optional_start_vars[var] = \
+                        [[0] for _ in internal_xinds] + new_var_list
 
         if previous_walk_data is not None:
             # If the generator has been run before, or if new
@@ -656,6 +800,11 @@ class Particles():
                 if var in previous_walk_data:
                     prev_var = previous_walk_data[var]
                     optional_start_vars[var] = prev_var + new_var_list
+                elif var in ('stranded', 'stranded_time'):
+                    # walk data predates stranding tracking: pad with
+                    # zeros so the list stays aligned per particle
+                    optional_start_vars[var] = \
+                        [[0] for _ in prev_xinds] + new_var_list
 
         # determine the new total number of particles we have now
         self.Np_tracer = len(start_xindices)
@@ -699,7 +848,10 @@ class Particles():
                 Dictionary of all x and y locations and travel times. Order of
                 indices is previous_walk_data[field][particle][iter],
                 where ['travel_times'][5][10] is the travel time of the 5th
-                particle at the 10th iteration
+                particle at the 10th iteration. Under
+                stranding_handling = 'park' the dictionary also contains
+                'stranded' (0 or 1 for every recorded step) and
+                'stranded_time' (cumulative model-time seconds stranded).
 
         """
         # if there is no walk data raise an error
@@ -749,9 +901,13 @@ class Particles():
                                                          start_times, start_optional)
 
             for ii in list(range(self.Np_tracer)):
-                # Don't duplicate location
-                # if particle is standing still at a boundary
-                if new_inds[ii] != start_pairs[ii]:
+                # Don't duplicate location if the particle is standing
+                # still at a boundary, unless it is parked this step --
+                # parked steps are recorded so that strand durations are
+                # measurable (the position repeats, time advances)
+                parked = ('stranded' in updated_optional
+                          and updated_optional['stranded'][ii] == 1)
+                if new_inds[ii] != start_pairs[ii] or parked:
                     # Append new information
                     all_xinds[ii].append(new_inds[ii][0])
                     all_yinds[ii].append(new_inds[ii][1])
@@ -797,10 +953,14 @@ class Particles():
                         new_inds, travel_times, updated_optional = lw.particle_stepper(self, [[all_xinds[ii][-1], all_yinds[ii][-1]]],[all_times[ii][-1]],
                                                                                        {var: [optional_vars[var][ii][-1]] for var in optional_vars})
                 
-                        # Don't duplicate location
-                        # if particle is standing still at a boundary
+                        # Don't duplicate location if the particle is
+                        # standing still at a boundary, unless it is
+                        # parked this step -- parked steps are recorded
+                        # so that strand durations are measurable
+                        parked = ('stranded' in updated_optional
+                                  and updated_optional['stranded'][0] == 1)
                         if new_inds[0] != [all_xinds[ii][-1],
-                                           all_yinds[ii][-1]]:
+                                           all_yinds[ii][-1]] or parked:
                             all_xinds[ii].append(new_inds[0][0])
                             all_yinds[ii].append(new_inds[0][1])
                             all_times[ii].append(travel_times[0])
