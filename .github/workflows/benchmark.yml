@@ -1,0 +1,56 @@
+# This workflow runs the three-implementation benchmark harness
+# (benchmarks/run_harness.py): the C port's ctest suite, the Rust port's
+# cargo tests, then the harness itself — python vs C vs Rust on identical
+# fixture bytes, with the byte-exact parity gate and warm-timing medians.
+#
+# Repository Actions policy only allows actions from repositories owned by
+# jay-kestrel, so actions/checkout and similar external actions are denied
+# (see the header comment in build.yml). A shell fetch of the PR merge ref
+# and plain shell steps do the job here.
+#
+# The harness runs the manifest-default workload (10,000 particles x 100
+# iterations, 5 warm repetitions per implementation): medians of 5 are the
+# spec's locked methodology, so CI does not shrink them. Python dominates
+# the runtime (~2-5 minutes on hosted runners); both ports finish in
+# seconds. results.json is written to the gitignored bench/out/harness/
+# and the summary table lands in the job log.
+
+name: benchmark
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  harness:
+    runs-on: ubuntu-latest
+    env:
+      PIP_BREAK_SYSTEM_PACKAGES: "1"  # ubuntu system python is externally managed
+    steps:
+    - name: Check out source (shell fetch; external actions are blocked by repo policy)
+      env:
+        REF: ${{ github.event_name == 'pull_request' && format('refs/pull/{0}/merge', github.event.number) || github.ref }}
+      run: |
+        git config --global --add safe.directory "$GITHUB_WORKSPACE"
+        git init -q "$GITHUB_WORKSPACE"
+        git fetch -q --depth=1 "https://github.com/${{ github.repository }}.git" "$REF"
+        git checkout -q --detach FETCH_HEAD
+    - name: Install Rust toolchain (shell rustup; external actions are blocked by repo policy)
+      run: |
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --profile minimal
+        echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+    - name: Install python dependencies (runner python; the harness imports dorado from the checkout)
+      run: python3 -m pip install -r requirements.txt
+    - name: C port tests (cmake + ctest, warnings as errors)
+      run: |
+        cmake -S c -B build-c -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_FLAGS=-Werror
+        cmake --build build-c
+        cd build-c && ctest --output-on-failure
+    - name: Rust port tests (cargo test)
+      run: cargo test --manifest-path rust/Cargo.toml
+    - name: Three-implementation harness (parity gate + warm timings)
+      run: python3 benchmarks/run_harness.py --input bench/fixture_rcm --out bench/out/harness
