@@ -1,0 +1,5 @@
+# Machine-consumed benchmark bytes: no EOL translation, ever. The fixture
+# freshness test (tests/test_benchmark_fixtures.py) compares committed bytes
+# against a fresh normalizer run; a CRLF rewrite at checkout breaks it on
+# autocrlf platforms (reproduced with a core.autocrlf=true clone).
+bench/** -text
