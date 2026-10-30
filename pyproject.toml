@@ -56,3 +56,6 @@ docs = [
 
 [tool.setuptools]
 packages = ["dorado"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
