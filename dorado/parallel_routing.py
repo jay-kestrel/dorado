@@ -12,7 +12,12 @@ import sys
 import os
 import re
 import string
+import logging
 from multiprocessing import Pool
+
+import dorado.lagrangian_walker as lw
+
+logger = logging.getLogger(__name__)
 
 
 # convert run script into a function that returns a single dictionary 'data'
@@ -40,8 +45,7 @@ def run_iter(pobj):
     pobj.particles.generate_particles(pobj.Np_tracer, pobj.seed_xloc,
                                       pobj.seed_yloc)
     # do iterations
-    for i in list(range(0, pobj.num_iter)):
-        all_walk = pobj.particles.run_iteration()
+    all_walk = lw.run_walk(pobj.particles, pobj.num_iter, pobj.Np_tracer)
 
     return all_walk
 
@@ -147,5 +151,9 @@ def parallel_routing(particles, num_iter, Np_tracer, seed_xloc, seed_yloc,
 
     # combine results before returning to user
     combined = combine_result(par_result)
+
+    logger.info('Parallel routing complete: %d workers, %d particles '
+                'per worker, %d iterations each', num_cores, Np_tracer,
+                num_iter)
 
     return combined

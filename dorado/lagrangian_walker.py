@@ -7,9 +7,13 @@ Project Homepage: https://github.com/passaH2O/dorado
 from __future__ import division, print_function, absolute_import
 from builtins import range, map
 from math import cos
+import logging
+import time
 import numpy as np
 from numpy.random import random
 from numpy import maximum, nansum
+
+logger = logging.getLogger(__name__)
 
 
 def random_pick_seed(choices, probs=None):
@@ -569,3 +573,47 @@ def particle_stepper(Particles, current_inds, travel_times, start_optional):
                 updated_optional[var] = [grid[x, y] for x, y in new_inds]
 
     return new_inds, travel_times, updated_optional
+
+
+def run_walk(Particles, num_iter, Np_tracer):
+    """Run a complete particle walk of num_iter iterations.
+
+    Run-level wrapper around
+    :obj:`dorado.particle_track.Particles.run_iteration`
+    that emits a single INFO record at run start (particle count and
+    steepest-descent vs weighted random walk mode) and a single INFO record
+    at run completion (iterations and wall time). Emits nothing inside the
+    per-step loops, where tqdm remains the step-level progress surface.
+
+    **Inputs** :
+
+        Particles : :obj:`dorado.particle_track.Particles`
+            A :obj:`dorado.particle_track.Particles` object with particles
+            already generated.
+
+        num_iter : `int`
+            Number of iterations to route particles for
+
+        Np_tracer : `int`
+            Number of particles in the walk.
+
+    **Outputs** :
+
+        all_walk_data : `dict`
+            Dictionary of all x and y locations and travel times, in the
+            same format as the output of *run_iteration*.
+
+    """
+    mode = ('steepest descent' if Particles.steepest_descent is True
+            else 'weighted random walk')
+    logger.info('Walk run starting: %d particles, %s mode, '
+                '%d iterations', Np_tracer, mode, num_iter)
+
+    start_time = time.perf_counter()
+    for i in list(range(0, num_iter)):
+        all_walk_data = Particles.run_iteration()
+
+    logger.info('Walk run complete: %d iterations in %.3f seconds',
+                num_iter, time.perf_counter() - start_time)
+
+    return all_walk_data
