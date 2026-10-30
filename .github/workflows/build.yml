@@ -16,6 +16,7 @@ name: build
 on:
   push:
   pull_request:
+  workflow_dispatch:
   schedule:
     - cron: '0 0 3 * *'  # run workflow at 12AM on third day of every month
 
