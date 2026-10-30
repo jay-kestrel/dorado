@@ -1,0 +1,93 @@
+# Builds the native extension wheels (dorado._native) via cibuildwheel,
+# checks their contents, and runs cargo fmt/clippy/test for the rust/ crate.
+
+name: wheels
+
+on:
+  pull_request:
+    paths:
+      - "rust/**"
+      - "pyproject.toml"
+      - ".github/workflows/wheels.yml"
+  push:
+    branches: [master]
+    paths:
+      - "rust/**"
+      - "pyproject.toml"
+      - ".github/workflows/wheels.yml"
+  workflow_dispatch:
+
+jobs:
+  rust-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      # pyo3 links libpython when building the test binary (the
+      # extension-module feature is only enabled by maturin for wheels).
+      - name: Install libpython for cargo test linking
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq libpython3-dev
+      - name: cargo fmt
+        run: cargo fmt --manifest-path rust/Cargo.toml --all -- --check
+      - name: cargo clippy
+        run: cargo clippy --manifest-path rust/Cargo.toml --all-targets -- -D warnings
+      - name: cargo test
+        run: cargo test --manifest-path rust/Cargo.toml
+
+  wheels:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Build wheels
+        uses: pypa/cibuildwheel@v4.3.5
+        env:
+          # One interpreter per OS; the pyo3 abi3-py311 feature tags the
+          # produced wheel cp311-abi3-* so it serves all Python >= 3.11.
+          CIBW_BUILD: "cp312-*"
+        with:
+          output-dir: wheelhouse
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels-${{ matrix.os }}
+          path: wheelhouse/*.whl
+          if-no-files-found: error
+
+  wheel-content:
+    needs: wheels
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: wheels-*
+          merge-multiple: true
+          path: wheelhouse
+      - name: Check wheel contents (_native extension + example .npz data)
+        run: |
+          python3 - <<'EOF'
+          import glob
+          import zipfile
+
+          wheels = sorted(glob.glob("wheelhouse/*.whl"))
+          assert len(wheels) == 3, f"expected 3 wheels, found: {wheels}"
+          for whl in wheels:
+              names = zipfile.ZipFile(whl).namelist()
+              native = [
+                  n for n in names
+                  if n.startswith("dorado/_native")
+                  and (n.endswith(".so") or n.endswith(".pyd"))
+              ]
+              npz = [n for n in names if n.startswith("dorado/") and n.endswith(".npz")]
+              assert native, f"{whl}: _native extension missing from wheel: {names}"
+              assert npz, f"{whl}: example .npz data missing from wheel: {names}"
+              print(f"{whl}: {native[0]} + {len(npz)} .npz data files")
+          print("wheel contents OK")
+          EOF
