@@ -506,3 +506,83 @@ def test_get_weight_leaves_weight_unchanged():
     weight_snapshot = particles.weight.copy()
     lw.get_weight(particles, ind)
     assert np.array_equal(particles.weight, weight_snapshot)
+
+
+# ---------------------------------------------------------------------------
+# per-particle kind/size behavior
+# ---------------------------------------------------------------------------
+
+def test_kind_presets_documented_defaults():
+    """KIND_PRESETS ships the three illustrative kinds with their fields."""
+    for kind, fields in {'sand': {'travel_time_multiplier': 1.2,
+                                  'diffusion_multiplier': 0.5,
+                                  'deposition_probability': 0.02},
+                         'mud': {'travel_time_multiplier': 1.0,
+                                 'diffusion_multiplier': 1.0,
+                                 'deposition_probability': 0.005},
+                         'plankton': {'travel_time_multiplier': 1.0,
+                                      'diffusion_multiplier': 1.2,
+                                      'deposition_probability': 0.0}}.items():
+        assert lw.KIND_PRESETS[kind] == fields
+
+
+def test_effective_multipliers_combinations():
+    """Size and preset multipliers multiply; deposition comes from preset."""
+    # no attributes: legacy behavior
+    assert lw.effective_multipliers(None, None) == (1.0, 1.0, 0.0)
+    # size only: travel time x size, diffusion x 1/size
+    assert lw.effective_multipliers(2.0, None) == (2.0, 0.5, 0.0)
+    # kind only: the preset values
+    assert lw.effective_multipliers(None, 'sand') == (1.2, 0.5, 0.02)
+    # both: the multipliers multiply, deposition still from the preset
+    assert lw.effective_multipliers(2.0, 'sand') == (2.4, 0.25, 0.02)
+
+
+def test_calc_travel_times_velocity_mult_doubles_time():
+    """An explicit velocity_mult scales the travel time exactly."""
+    params.diff_coeff = 0
+    params.depth = np.ones_like(params.stage)
+    params.qx = np.zeros_like(params.stage)
+    params.qy = np.ones_like(params.stage)
+    particle = pt.Particles(params)
+    particle.velocity = np.ones_like(particle.velocity)
+    particle.velocity[0, 0:2] = 3
+    particle.velocity_angle = np.ones_like(particle.velocity_angle)
+    old_ind, new_ind = [1, 1], [0, 1]
+    trav_time = lw.calc_travel_times(particle, 1, old_ind, new_ind, 1)
+    assert trav_time > 0
+    assert lw.calc_travel_times(particle, 1, old_ind, new_ind, 1,
+                                velocity_mult=2.0) == pytest.approx(2*trav_time)
+
+
+def test_calc_travel_times_diff_mult_scales_diffusion():
+    """An explicit diff_mult scales the diffusion deviation exactly."""
+    params.diff_coeff = 0.5
+    params.depth = np.ones_like(params.stage)
+    params.qx = np.zeros_like(params.stage)
+    params.qy = np.ones_like(params.stage)
+    particle = pt.Particles(params)
+    particle.velocity = np.ones_like(particle.velocity)
+    particle.velocity[0, 0:2] = 3
+    particle.velocity_angle = np.ones_like(particle.velocity_angle)
+    old_ind, new_ind = [1, 1], [0, 1]
+    # with the same seed the diffusion draw is identical, so the
+    # deviation from the deterministic part must scale with diff_mult.
+    # calc_travel_times consumes the first RNG draw after seeding, so
+    # re-seed and draw it manually to learn the value it used.
+    np.random.seed(11)
+    base_call = lw.calc_travel_times(particle, 1, old_ind, new_ind, 1)
+    np.random.seed(11)
+    draw = np.random.random()
+    diff = (0.5 - draw)*params.diff_coeff
+    # invert t = base*(1+diff) to recover the deterministic part
+    base = base_call/(1 + diff)
+    np.random.seed(11)
+    doubled = lw.calc_travel_times(particle, 1, old_ind, new_ind, 1,
+                                   diff_mult=2.0)
+    assert doubled == pytest.approx(2*base_call - base)
+    # and with velocity_mult too: the whole travel time scales
+    np.random.seed(11)
+    both = lw.calc_travel_times(particle, 1, old_ind, new_ind, 1,
+                                velocity_mult=2.0, diff_mult=2.0)
+    assert both == pytest.approx(2*doubled)

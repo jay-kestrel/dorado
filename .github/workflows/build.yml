@@ -91,6 +91,7 @@ jobs:
         python examples/parallel_comparison.py
         python examples/traveltime_straight_channel.py
         python examples/nourishment_example.py
+        python examples/particle_sizes_types.py
         cd examples
         python unsteady_example.py
 
