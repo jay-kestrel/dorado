@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 
 # convert run script into a function that returns a single dictionary 'data'
-def run_iter(pobj):
+def run_iter(pobj_and_seed):
     """Wrapper run script for the particle iterations.
 
     This is an internal function that should not be called directly. Rather it
@@ -32,16 +32,26 @@ def run_iter(pobj):
 
     **Inputs** :
 
-        pobj : :obj:`parallel_obj`
-            Special parallel object.
+        pobj_and_seed : `tuple`
+            Tuple of a :obj:`parallel_obj` special parallel object and the
+            integer seed used to reseed this worker's random number
+            generator, so that each core produces an independent set of
+            random walks.
 
     **Outputs** :
 
         all_walk_data : `list`
-            Nested list of all x and y locations, travel times, and 
-            any optional variables, with details same as input previous_walk_data
+            Nested list of all x and y locations, travel times, and
+            any optional variables, with details same as input previous_walk_data.
+            None when num_iter is 0.
 
     """
+    pobj, worker_seed = pobj_and_seed
+
+    # every worker otherwise inherits an identical copy of the parent RNG
+    # state and all cores would produce identical random walks
+    np.random.seed(worker_seed)
+
     pobj.particles.generate_particles(pobj.Np_tracer, pobj.seed_xloc,
                                       pobj.seed_yloc,
                                       particle_size=pobj.particle_size,
@@ -71,12 +81,18 @@ def combine_result(par_result):
             Combined results dictionary containing all tracked variables.
     """
     # initiate final results dictionary
-    single_result = {var: [] for var in par_result[0].keys()}
+    single_result = {}
 
-    # populate the dictionary
+    # populate the dictionary (an entry is None for a worker that ran
+    # zero iterations)
     for result in par_result:
+        if result is None:
+            continue
         for var in result.keys():
-            single_result[var].extend(result[var])
+            if var in single_result:
+                single_result[var].extend(result[var])
+            else:
+                single_result[var] = list(result[var])
 
     return single_result
 
@@ -163,8 +179,15 @@ def parallel_routing(particles, num_iter, Np_tracer, seed_xloc, seed_yloc,
     pobj.particle_size = particle_size
     pobj.particle_type = particle_type
 
+    # draw one seed per worker from the parent RNG: every worker otherwise
+    # receives a copy of the same RNG state and all cores produce identical
+    # random walks (seeding from the parent keeps runs reproducible when the
+    # user seeds the global RNG before calling this function)
+    worker_seeds = np.random.randint(0, 2**31 - 1, size=num_cores,
+                                     dtype=np.int64)
+
     # define list to pass to actual function that will be mapped to in parallel
-    p_list = [pobj] * num_cores
+    p_list = [(pobj, int(seed)) for seed in worker_seeds]
 
     # create the parallel pool and run the process
     p = Pool(processes=num_cores)

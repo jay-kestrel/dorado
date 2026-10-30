@@ -79,15 +79,16 @@ def steady_plots(particle, num_iter,
             os.makedirs(folder_name+os.sep+'data')
 
     # Iterate and save results
+    walk_data = None  # stays None when num_iter is 0
     for i in tqdm(list(range(0, num_iter)), ascii=True):
         # Do particle iterations
         walk_data = particle.run_iteration()
         if save_output:
             # Get current location
-            xi, yi, ti = get_state(walk_data)
+            xi, yi, ti, _ = get_state(walk_data)
             if i == 0:
                 # Initialize figure
-                x0, y0, t0 = get_state(walk_data, 0)
+                x0, y0, t0, _ = get_state(walk_data, 0)
                 fig = plt.figure(dpi=200)
                 ax = fig.add_subplot(111)
                 im = ax.imshow(particle.depth)
@@ -107,7 +108,7 @@ def steady_plots(particle, num_iter,
                         'figs'+os.sep+'output'+str(i)+'.png',
                         bbox_inches='tight')
 
-    if save_output:
+    if save_output and walk_data is not None:
         # save data as json text file - technically human readable
         fpath = folder_name+os.sep+'data'+os.sep+'data.txt'
         json.dump(walk_data, open(fpath, 'w'))
@@ -210,16 +211,39 @@ def unsteady_plots(dx, Np_tracer, seed_xloc, seed_yloc, num_steps, timestep,
     qxlist = sorted(qxlist)
     qylist = sorted(qylist)
     datalist = sorted(datalist)
-    if num_steps > max(len(depthlist), len(datalist)):
+    # every variable read for this output_type needs at least num_steps
+    # files; a mismatched set of lists would otherwise crash mid-run with
+    # an opaque IndexError
+    if output_type in ('csv', 'npy'):
+        file_counts = {'depth': len(depthlist), 'stage': len(stagelist),
+                       'qx': len(qxlist), 'qy': len(qylist)}
+    elif output_type == 'npz':
+        file_counts = {'data': len(datalist)}
+    else:
+        raise ValueError('Output datatype/structure unsupported, modify'
+                         ' the output reading portion of the code')
+
+    n_available = min(file_counts.values())
+    if num_steps > n_available:
+        if num_steps <= max(file_counts.values()):
+            # lists are mismatched: some variable runs out before the others
+            raise ValueError(
+                'Mismatched model output file lists in output_base: ' +
+                ', '.join('%s=%d' % (k, v) for k, v in
+                          sorted(file_counts.items())) +
+                '; every variable read for output_type=' +
+                repr(output_type) + ' needs at least num_steps=' +
+                str(num_steps) + ' files')
         handle_verbose_deprecation(verbose)
         logger.warning('num_steps exceeds number of model outputs in'
-              ' output_base')
+                       ' output_base')
         logger.warning('Setting num_steps to equal number of model outputs')
-        num_steps = max(len(depthlist), len(datalist))
+        num_steps = n_available
 
     # Create vector of target times
     target_times = np.arange(timestep, timestep*(num_steps + 1), timestep)
     # Iterate through model timesteps
+    walk_data = None  # stays None when num_steps is 0
     for i in tqdm(list(range(0, num_steps)), ascii=True):
         # load depth, stage, qx, qy for this timestep
         # Making assumption that other variables are constant between output
@@ -261,9 +285,9 @@ def unsteady_plots(dx, Np_tracer, seed_xloc, seed_yloc, num_steps, timestep,
 
         walk_data = particle.run_iteration(target_time=target_times[i])
 
-        xi, yi, ti = get_state(walk_data)
+        xi, yi, ti, _ = get_state(walk_data)
         if i == 0:
-            x0, y0, t0 = get_state(walk_data, 0)
+            x0, y0, t0, _ = get_state(walk_data, 0)
             # Initialize figure
             fig = plt.figure(dpi=200)
             ax = fig.add_subplot(111)
@@ -287,8 +311,9 @@ def unsteady_plots(dx, Np_tracer, seed_xloc, seed_yloc, num_steps, timestep,
                     bbox_inches='tight')
 
     # save data as a json text file - technically human readable
-    fpath = folder_name+os.sep+'data'+os.sep+'data.txt'
-    json.dump(walk_data, open(fpath, 'w'))
+    if walk_data is not None:
+        fpath = folder_name+os.sep+'data'+os.sep+'data.txt'
+        json.dump(walk_data, open(fpath, 'w'))
 
     # example code for loading the dict back from the output json file:
     # data = json.load(open('data.txt'))
@@ -343,15 +368,16 @@ def time_plots(particle, num_iter, folder_name=None, verbose=None):
         os.makedirs(folder_name+os.sep+'data')
 
     # Iterate and save results
+    walk_data = None  # stays None when num_iter is 0
     for i in tqdm(list(range(0, num_iter)), ascii=True):
         # Do particle iterations
         walk_data = particle.run_iteration()
 
         # collect latest travel times
-        xi, yi, temptimes = get_state(walk_data)
+        xi, yi, temptimes, _ = get_state(walk_data)
 
         if i == 0:
-            x0, y0, t0 = get_state(walk_data, 0)
+            x0, y0, t0, _ = get_state(walk_data, 0)
             # Initialize figure
             fig = plt.figure(dpi=200)
             ax = plt.gca()
@@ -380,8 +406,9 @@ def time_plots(particle, num_iter, folder_name=None, verbose=None):
                     bbox_inches='tight')
 
     # save data as a json text file - technically human readable
-    fpath = folder_name+os.sep+'data'+os.sep+'data.txt'
-    json.dump(walk_data, open(fpath, 'w'))
+    if walk_data is not None:
+        fpath = folder_name+os.sep+'data'+os.sep+'data.txt'
+        json.dump(walk_data, open(fpath, 'w'))
 
     # example code for loading the dict back from the output json file:
     # data = json.load(open('data.txt'))
@@ -426,9 +453,11 @@ def get_state(walk_data, iteration=-1, verbose=None):
             List containing equivalent of
             walk_data['travel_times'][:][iteration]
             
-        optional_data : `dict of lists`, optional 
+        optional_data : `dict of lists`
             A dictionary of lists of optional outputs for the particle stepper
             containing equivalent of walk_data[var][:][iteration] for each var.
+            Always returned; an empty dict when walk_data tracked no optional
+            variables.
 
 
     """
@@ -470,10 +499,9 @@ def get_state(walk_data, iteration=-1, verbose=None):
         logger.info('Note: %s particles have not reached %s iterations' % \
               (iter_exceeds_warning, iteration))
 
-    if optional_vars:
-        return xinds, yinds, times, optional_data
-    else:
-        return xinds, yinds, times
+    # stable contract: optional_data is always returned (empty when no
+    # optional variables were tracked) so callers can unpack a 4-tuple
+    return xinds, yinds, times, optional_data
 
 def get_time_state(walk_data, target_time, verbose=None):
     """Pull walk_data values nearest to a specific time.
@@ -511,9 +539,11 @@ def get_time_state(walk_data, target_time, verbose=None):
             to input. Times will differ slightly from input time due to
             the nature of the method.
 
-        optional_data : `dict of lists`, optional 
+        optional_data : `dict of lists`
             A dictionary of lists of optional outputs for the particle stepper
             containing equivalent of walk_data[var][:][iteration] for each var.
+            Always returned; an empty dict when walk_data tracked no optional
+            variables.
 
 
     """
@@ -545,10 +575,9 @@ def get_time_state(walk_data, target_time, verbose=None):
             handle_verbose_deprecation(verbose)
             logger.info('Note: Particle '+str(ii)+' never reached target_time')
 
-    if optional_vars:
-        return xinds, yinds, times, optional_data
-    else:
-        return xinds, yinds, times
+    # stable contract: optional_data is always returned (empty when no
+    # optional variables were tracked) so callers can unpack a 4-tuple
+    return xinds, yinds, times, optional_data
 
 
 def plot_exposure_time(walk_data,
@@ -820,7 +849,7 @@ def plot_exposure_time_thresholds(walk_data,
     """
 
     Np_tracer = len(walk_data['xinds'])
-    x, y, end_time = get_state(walk_data)
+    x, y, end_time, _ = get_state(walk_data)
 
     if timedelta == 1:
         timeunit = '[s]'
@@ -874,18 +903,18 @@ def plot_exposure_time_thresholds(walk_data,
     ax1.set_ylim([0, 1])
 
     # Percentile markers
-    E50_idx = np.searchsorted(smooth_CDF, 0.50)
-    E75_idx = np.searchsorted(smooth_CDF, 0.75)
-    E90_idx = np.searchsorted(smooth_CDF, 0.90)
-
-    E50_time = int(smooth_time_vect[E50_idx] / timedelta)
-    E75_time = int(smooth_time_vect[E75_idx] / timedelta)
-    E90_time = int(smooth_time_vect[E90_idx] / timedelta)
-
+    # Clamp the CDF lookup so a percentile that the CDF never reaches
+    # (short runs, small ROIs) is reported as 'not reached' instead of
+    # reading past the end of the smoothed time vector
     handle_verbose_deprecation(verbose)
-    logger.info(f'E50: {E50_time} {timeunit}')
-    logger.info(f'E75: {E75_time} {timeunit}')
-    logger.info(f'E90: {E90_time} {timeunit}')
+    for lv in (0.50, 0.75, 0.90):
+        idx = int(np.searchsorted(smooth_CDF, lv))
+        if idx >= len(smooth_time_vect):
+            logger.info(f'E{int(lv*100)}: not reached '
+                        f'(max F={smooth_CDF[-1]:.3f})')
+        else:
+            logger.info(f'E{int(lv*100)}: '
+                        f'{int(smooth_time_vect[idx] / timedelta)} {timeunit}')
 
     for yval in [0.5, 0.75, 0.90]:
         ax1.axhline(y=yval, color='gray', linestyle='--', linewidth=0.75)
@@ -1089,9 +1118,9 @@ def plot_state(grid, walk_data, iteration=-1, target_time=None, c='b'):
 
     """
     if target_time is None:
-        x, y, t = get_state(walk_data, int(iteration))
+        x, y, t, _ = get_state(walk_data, int(iteration))
     else:
-        x, y, t = get_time_state(walk_data, target_time)
+        x, y, t, _ = get_time_state(walk_data, target_time)
     ax = plt.gca()
     ax.imshow(grid)
     plt.scatter(y, x, c=c)
@@ -1307,10 +1336,9 @@ def show_nourishment_area(visit_freq, grid=None, walk_data=None,
     alphas = np.clip(alphas, min_alpha, 1)
     colors = Normalize(np.nanmin(visit_freq), 1)(visit_freq)  # Normalize color
     if isinstance(cmap, str):
-        try:
-            cmap = matplotlib.colormaps[cmap]
-        except AttributeError:
-            cmap = plt.cm.get_cmap(cmap)
+        # matplotlib.colormaps exists since 3.5; the removed plt.cm.get_cmap
+        # fallback could never help on any supported matplotlib
+        cmap = matplotlib.colormaps[cmap]
     colors = cmap(colors)
     colors[..., -1] = alphas
 
@@ -1323,7 +1351,7 @@ def show_nourishment_area(visit_freq, grid=None, walk_data=None,
     ax.set_facecolor('k')  # Set facecolor black
     if grid is not None:
         # Grid background intentionally dark:
-        im = ax.imshow(grid, cmap='gist_gray', vmax=np.max(grid)*3)
+        im = ax.imshow(grid, cmap='gist_gray', vmax=np.nanmax(grid)*3)
     # Show nourishment area
     nr = ax.imshow(colors)
     plt.title('Nourishment Area')
@@ -1397,10 +1425,9 @@ def show_nourishment_time(mean_times, grid=None, walk_data=None,
     colors = Normalize(np.nanmin(mean_times),
                        np.nanmax(mean_times))(mean_times)  # Normalize colors
     if isinstance(cmap, str):
-        try:
-            cmap = matplotlib.colormaps[cmap]
-        except AttributeError:
-            cmap = plt.cm.get_cmap(cmap)
+        # matplotlib.colormaps exists since 3.5; the removed plt.cm.get_cmap
+        # fallback could never help on any supported matplotlib
+        cmap = matplotlib.colormaps[cmap]
     colors = cmap(colors)
     colors[..., -1] = alphas
 
@@ -1413,7 +1440,7 @@ def show_nourishment_time(mean_times, grid=None, walk_data=None,
     ax.set_facecolor('k')  # Set facecolor black
     if grid is not None:
         # Grid background intentionally dark:
-        im = ax.imshow(grid, cmap='gist_gray', vmax=np.max(grid)*3)
+        im = ax.imshow(grid, cmap='gist_gray', vmax=np.nanmax(grid)*3)
     # Show nourishment times
     nt = ax.imshow(colors)
     plt.title('Nourishment Times')

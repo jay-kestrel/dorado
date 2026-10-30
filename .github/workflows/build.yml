@@ -30,7 +30,7 @@ jobs:
         python-version: ${{ matrix.python-version }}
     - name: Install dependencies
       run: |
-        python -m pip install --upgrade pip
+        python -m pip install --upgrade "pip<26"
         pip install pytest pytest-cov coveralls
         pip install -r requirements.txt
     - name: Install dorado
@@ -68,7 +68,7 @@ jobs:
         python-version: ${{ matrix.python-version }}
     - name: Install dependencies
       run: |
-        python -m pip install --upgrade pip
+        python -m pip install --upgrade "pip<26"
         pip install pytest pytest-cov coveralls
         pip install -r requirements.txt
     - name: Install dorado
@@ -150,7 +150,7 @@ jobs:
         python-version: '3.11.0'
     - name: Install dependencies
       run: |
-        python -m pip install --upgrade pip
+        python -m pip install --upgrade "pip<26"
         pip install -r requirements.txt
         pip install sphinx
         sudo apt update -y && sudo apt install -y latexmk texlive-latex-recommended texlive-latex-extra texlive-fonts-recommended dvipng

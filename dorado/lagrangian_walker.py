@@ -879,6 +879,7 @@ def run_walk(Particles, num_iter, Np_tracer):
                 '%d iterations', Np_tracer, mode, num_iter)
 
     start_time = time.perf_counter()
+    all_walk_data = None
     for i in list(range(0, num_iter)):
         all_walk_data = Particles.run_iteration()
 
