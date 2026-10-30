@@ -62,7 +62,7 @@ Workloads, the timing contract, and the full run are documented in [benchmarks/R
 
 - Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/): `feat:`, `fix:`, `docs:`, `build:`, `test:`, `refactor:`, optionally scoped — e.g. `docs(apiref): ...`, `fix(routing): ...`.
 - Pull requests are squash-merged into `master` with a linear history.
-- Please make sure the test suite and the docs build pass locally before opening a pull request; CI will run the full matrix (Linux/macOS/Windows × Python 3.11/3.12), the examples, and the docs build on your PR.
+- Please make sure the test suite and the docs build pass locally before opening a pull request; CI will run the full matrix (Linux/macOS/Windows × Python 3.11/3.12, with a Rust toolchain set up because maturin builds the native extension), the examples and benchmark smoke test, a conda-recipe build, a lint job, and the docs build on your PR. Release tags additionally build platform wheels through the `wheels.yml` workflow.
 
 ## License
 

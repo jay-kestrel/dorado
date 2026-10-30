@@ -117,7 +117,7 @@ To log somewhere other than stderr, pass a custom handler, e.g. ``dorado.setup_l
 
 At ``INFO`` level, `dorado` reports the defaulting decisions made while a :obj:`dorado.particle_track.Particles` object is constructed (e.g. the ``theta``, ``gamma``, and diffusion-coefficient defaults, and which routing mode is active), the registration of an ROI grid, and per-run start/complete summaries from the routing kernel in ``lagrangian_walker``.
 
-The legacy ``verbose`` parameter of :obj:`dorado.particle_track.modelParams` is **deprecated**: passing ``verbose=True`` maps to ``INFO`` level logging, ``verbose=False`` to ``ERROR`` level, and a ``DeprecationWarning`` is emitted in both cases. Migrate to ``DORADO_LOG_LEVEL`` or :obj:`dorado.logging_config.setup_logging`.
+The legacy ``verbose`` parameter of :obj:`dorado.particle_track.modelParams` is **deprecated**: it is bridged by a non-persistent shim — passing ``verbose=True`` (or ``None``, documented as equivalent) raises the logger to ``INFO`` for the legacy run, while ``verbose=False`` leaves the currently configured level in place, and a ``DeprecationWarning`` is emitted. Migrate to ``DORADO_LOG_LEVEL`` or :obj:`dorado.logging_config.setup_logging`.
 
 .. toctree::
    :maxdepth: 1
