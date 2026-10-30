@@ -865,8 +865,13 @@ def test_params_uv_and_lists_not_mutated():
     assert 'roi_flag' in particle.particle_variables
 
 
-def test_gamma_out_of_range_warns_and_clamps():
-    """gamma outside [0, 1] must warn, clamp, and keep weights >= 0."""
+def test_gamma_out_of_range_raises():
+    """gamma outside [0, 1] must raise ValueError instead of corrupting picks.
+
+    Review probe (F3): gamma = 1.5 produced negative weights, a
+    non-monotonic cumulative distribution, and 43.5% of picks landing
+    on a single invalid cell with no warning of any kind.
+    """
     params = particle_track.modelParams()
     params.dx = 1.
     params.model = 'DeltaRCM'
@@ -875,19 +880,14 @@ def test_gamma_out_of_range_warns_and_clamps():
     params.stage = np.tile(np.linspace(1.0, 0.9, 5), (5, 1))
     params.qx = np.zeros((5, 5))
     params.qy = np.ones((5, 5))
-    params.verbose = True
 
     params.gamma = 1.5
-    with pytest.warns(Warning, match='[Gg]amma'):
-        particle = particle_track.Particles(params)
-    assert particle.gamma == 1.0
-    assert particle.weight.min() >= 0
+    with pytest.raises(ValueError, match='[Gg]amma'):
+        particle_track.Particles(params)
 
     params.gamma = -0.2
-    with pytest.warns(Warning, match='[Gg]amma'):
-        particle = particle_track.Particles(params)
-    assert particle.gamma == 0.0
-    assert particle.weight.min() >= 0
+    with pytest.raises(ValueError, match='[Gg]amma'):
+        particle_track.Particles(params)
 
 
 def test_cell_type_none_falls_back_to_estimation():
