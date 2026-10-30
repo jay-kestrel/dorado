@@ -13,6 +13,8 @@ import numpy as np
 from numpy.random import random
 from numpy import maximum, nansum
 
+import dorado.cobol_walk as cw
+
 logger = logging.getLogger(__name__)
 
 
@@ -237,6 +239,12 @@ def make_weight(Particles):
     stored inside the :obj:`dorado.particle_track.Particles` object
     for use when routing. Called when the object gets instantiated.
 
+    The construction is fused into a single pass over the grid: the
+    (L, W, 9) output array is the only full-size allocation and every
+    component is built channel-by-channel on (L, W) planes, eliminating
+    the temporary (L, W, 9) stack chain (a >1 GB transient on 1000x2000
+    grids) while producing the same weights.
+
     **Inputs** :
 
         Particles : :obj:`dorado.particle_track.Particles`
@@ -250,67 +258,136 @@ def make_weight(Particles):
     """
     L, W = Particles.stage.shape
 
-    # calculate surface slope weights
-    weight_sfc = (tile_domain_array(Particles.stage) \
-                  - big_sliding_window(Particles.stage))
-    weight_sfc /= tile_local_array(Particles.distances, L, W)
-    weight_sfc[weight_sfc <= 0] = 0
-    clear_borders(weight_sfc)
+    # float64 views of the routing fields (no copy when already float64;
+    # float32 inputs are promoted before arithmetic, matching the reference
+    # construction where the sliding-window stack upcasts to float64)
+    stage = np.asarray(Particles.stage, dtype=np.float64)
+    depth = np.asarray(Particles.depth, dtype=np.float64)
+    qx = np.asarray(Particles.qx, dtype=np.float64)
+    qy = np.asarray(Particles.qy, dtype=np.float64)
+    cell_type = np.asarray(Particles.cell_type)
+    dist = np.ravel(Particles.distances)
+    jvec = np.ravel(Particles.jvec)
+    ivec = np.ravel(Particles.ivec)
+    dry_depth = Particles.dry_depth
+    theta = Particles.theta
+    gamma = Particles.gamma
+    park = Particles.stranding_handling == 'park'
 
-    # calculate inertial component weights
-    weight_int = (tile_domain_array(Particles.qx)*tile_local_array(Particles.jvec, L, W)) \
-                 + (tile_domain_array(Particles.qy)*tile_local_array(Particles.ivec, L, W))
-    weight_int /= tile_local_array(Particles.distances, L, W)
-    weight_int[weight_int <= 0] = 0
-    clear_borders(weight_int)
+    # neighbor (di, dj) offsets in the [NW, N, NE, W, center, E, SW, S, SE]
+    # channel order shared by big_sliding_window and tile_local_array
+    offsets = ((-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 0),
+               (0, 1), (1, -1), (1, 0), (1, 1))
 
-    # get depth and cell types for neighboring cells
-    depth_ind = big_sliding_window(Particles.depth)
-    ct_ind = big_sliding_window(Particles.cell_type)
+    def shifted(field, k):
+        # interior view of `field` shifted by channel k's offset: the value
+        # at interior cell (i, j) is field[i + di, j + dj]. Border cells are
+        # never written and stay zero, matching the reference where
+        # clear_borders removes them before they can influence anything.
+        di, dj = offsets[k]
+        return field[1 + di:L - 1 + di, 1 + dj:W - 1 + dj]
 
-    # set weights for cells that are too shallow, or invalid 0
-    weight_sfc[(depth_ind <= Particles.dry_depth) | (ct_ind == 2)] = 0
-    weight_int[(depth_ind <= Particles.dry_depth) | (ct_ind == 2)] = 0
+    def dry_or_land(k):
+        # cells that are too shallow, or invalid, cannot receive flow
+        return (shifted(depth, k) <= dry_depth) | (shifted(cell_type, k) == 2)
 
-    # if sum of weights is above 0 normalize by sum of weights
-    norm_sfc = np.nansum(weight_sfc, axis=2)
-    idx_sfc = tile_domain_array((norm_sfc > 0))
-    weight_sfc[idx_sfc] /= tile_domain_array(norm_sfc)[idx_sfc]
+    # the (L, W, 9) output is the only full-size allocation; every component
+    # is built channel-by-channel on (L, W) planes so no (L, W, 9) temporary
+    # ever materializes (the old chain peaked at ~1.1 GB on 1000x2000 grids)
+    weight = np.zeros((L, W, 9))
+    norm_sfc = np.zeros((L, W))
+    norm_int = np.zeros((L, W))
 
-    norm_int = np.nansum(weight_int, axis=2)
-    idx_int = tile_domain_array((norm_int > 0))
-    weight_int[idx_int] /= tile_domain_array(norm_int)[idx_int]
+    # pass 1: raw surface-gradient components and their per-cell sums;
+    # NaN (from NaN fields) is skipped in the sums exactly like nansum
+    for k in range(9):
+        w = weight[1:-1, 1:-1, k]
+        np.subtract(stage[1:-1, 1:-1], shifted(stage, k), out=w)
+        w /= dist[k]
+        w[w <= 0] = 0
+        w[dry_or_land(k)] = 0
+        norm_sfc[1:-1, 1:-1] += np.where(np.isnan(w), 0.0, w)
 
-    # define actual weight by using gamma, and weight components
-    weight = Particles.gamma * weight_sfc + \
-             (1 - Particles.gamma) * weight_int
+    # pass 2: raw inertial components and their per-cell sums
+    for k in range(9):
+        w = weight[1:-1, 1:-1, k]
+        np.multiply(qx[1:-1, 1:-1], jvec[k], out=w)
+        w += qy[1:-1, 1:-1] * ivec[k]
+        w /= dist[k]
+        w[w <= 0] = 0
+        w[dry_or_land(k)] = 0
+        norm_int[1:-1, 1:-1] += np.where(np.isnan(w), 0.0, w)
 
-    # modify the weight by the depth and theta weighting parameter
-    weight = depth_ind ** Particles.theta * weight
+    # normalize both components in place, exactly where their sum is positive
+    for k in range(9):
+        w = weight[1:-1, 1:-1, k]
+        ni = norm_int[1:-1, 1:-1]
+        np.divide(w, ni, out=w, where=ni > 0)
 
-    # if the depth is below the minimum depth then set weight to 0
-    weight[(depth_ind <= Particles.dry_depth) | (ct_ind == 2)] = 0
+    # pass 3: blend the normalized components and apply the depth^theta
+    # weighting, recomputing the surface component channel-by-channel
+    scratch = np.empty((max(L - 2, 0), max(W - 2, 0)))
+    for k in range(9):
+        w = weight[1:-1, 1:-1, k]
+        a = scratch
+        np.subtract(stage[1:-1, 1:-1], shifted(stage, k), out=a)
+        a /= dist[k]
+        a[a <= 0] = 0
+        a[dry_or_land(k)] = 0
+        ns = norm_sfc[1:-1, 1:-1]
+        np.divide(a, ns, out=a, where=ns > 0)
+        a *= gamma
+        w *= 1 - gamma
+        a += w
+        np.power(shifted(depth, k), theta, out=w)
+        np.multiply(w, a, out=a)
+        a[dry_or_land(k)] = 0
+        w[...] = a
 
-    # if it's a dead end with only nans and 0's, choose deepest cell
-    zero_weights = tile_domain_array((np.nansum(weight, axis=2) <= 0))
-    deepest_cells = (depth_ind == tile_domain_array(np.max(depth_ind,axis=2)))
-    # under stranding_handling = 'park', permanent land is not a valid
-    # fallback destination while any non-land cell exists in the window:
-    # pick the deepest non-land cell instead, and only fall back to the
-    # legacy choice when the whole window is land
-    if Particles.stranding_handling == 'park':
-        not_land = (ct_ind != 2)
-        any_not_land = np.any(not_land, axis=2)
-        deepest_dry_aware = \
-            (depth_ind == tile_domain_array(np.max(np.where(not_land,
-                                                            depth_ind,
-                                                            -np.inf),
-                                                   axis=2)))
-        deepest_cells = ((deepest_dry_aware & not_land) |
-                         (deepest_cells &
-                          tile_domain_array(~any_not_land)))
-    choose_deep_cells = (zero_weights & deepest_cells)
-    weight[choose_deep_cells] = 1.0
+    # pass 4: dead-end cells with only nans and 0's pick the deepest cell;
+    # the final per-cell sums and the deepest-cell maxima are accumulated
+    # channel-by-channel (max is exact, so the reduction order cannot
+    # change the result)
+    sum_fin = np.zeros((L, W))
+    for k in range(9):
+        wk = weight[1:-1, 1:-1, k]
+        sum_fin[1:-1, 1:-1] += np.where(np.isnan(wk), 0.0, wk)
+    zero_cells = sum_fin[1:-1, 1:-1] <= 0
+
+    max_all = scratch  # scratch is dead after pass 3; reuse for the max reduce
+    np.copyto(max_all, shifted(depth, 0))
+    for k in range(1, 9):
+        np.maximum(max_all, shifted(depth, k), out=max_all)
+
+    if park:
+        # under stranding_handling = 'park', permanent land is not a valid
+        # fallback destination while any non-land cell exists in the window:
+        # pick the deepest non-land cell instead, and only fall back to the
+        # legacy choice when the whole window is land
+        any_not_land = np.zeros((max(L - 2, 0), max(W - 2, 0)), dtype=bool)
+        max_dry = None
+        for k in range(9):
+            not_land = shifted(cell_type, k) != 2
+            any_not_land |= not_land
+            cand = np.where(not_land, shifted(depth, k), -np.inf)
+            if max_dry is None:
+                max_dry = cand.copy()
+            else:
+                np.maximum(max_dry, cand, out=max_dry)
+    else:
+        max_dry = None
+
+    # dead-end fallback channel by channel; only one deepest mask is alive
+    # at a time to keep the transient footprint at one (L, W) plane
+    for k in range(9):
+        w = weight[1:-1, 1:-1, k]
+        if park:
+            not_land = shifted(cell_type, k) != 2
+            deepest_k = (((shifted(depth, k) == max_dry) & not_land) |
+                         ((shifted(depth, k) == max_all) & ~any_not_land))
+        else:
+            deepest_k = shifted(depth, k) == max_all
+        w[zero_cells & deepest_k] = 1.0
 
     # Final checks, eliminate invalid choices
     clear_borders(weight)
@@ -721,10 +798,33 @@ def particle_stepper(Particles, current_inds, travel_times, start_optional):
         park_mask = [False]*len(inds_tuple)
         stranded_times = None
 
-    # for each particle index get the weights
-    new_cells = [get_weight(Particles, x)
-                 if (x != (0, 0) and not park_mask[i]) else 4
-                 for i, x in enumerate(inds_tuple)]
+    # for each particle index get the weights. With DORADO_COBOL=1 the
+    # pick runs through the batched COBOL kernel instead: one uniform
+    # per eligible particle drawn from the reference stream in the same
+    # order (np.random.random() is bit-identical to the reference's
+    # np.random.uniform(0, cutoffs[-1])), weight rows gathered into a
+    # (k, 9) array, and the kernel reproduces random_pick exactly
+    # (NaN -> 0, cumsum, u*total, searchsorted-left).
+    if cw.cobol_active():
+        if Particles.steepest_descent is True:
+            raise NotImplementedError(
+                "DORADO_COBOL=1 implements the weighted random walk; "
+                "steepest_descent mode has no COBOL kernel")
+        eligible = [i for i, x in enumerate(inds_tuple)
+                    if (x != (0, 0) and not park_mask[i])]
+        pick_u = np.random.random(len(eligible))
+        rows = np.array([Particles.weight[inds_tuple[i][0],
+                                          inds_tuple[i][1], :]
+                         for i in eligible], dtype=np.float64) \
+            if eligible else np.zeros((0, 9), dtype=np.float64)
+        picked = cw.pick_cells(rows, pick_u)
+        new_cells = [4]*len(inds_tuple)
+        for j, i in enumerate(eligible):
+            new_cells[i] = int(picked[j])
+    else:
+        new_cells = [get_weight(Particles, x)
+                     if (x != (0, 0) and not park_mask[i]) else 4
+                     for i, x in enumerate(inds_tuple)]
     # for each particle get the new index
     new_inds = list(map(lambda x, y:
                         calculate_new_ind(x, y, Particles.iwalk,
@@ -796,13 +896,50 @@ def particle_stepper(Particles, current_inds, travel_times, start_optional):
                 new_inds[i][1] = inds[i][1]
                 new_deposited[i] = 1
 
-    # add the travel times
-    temp_travel = list(map(lambda w, x, y, z, vm, dm:
-                           calc_travel_times(Particles, w, x, y, z,
-                                             velocity_mult=vm,
-                                             diff_mult=dm),
-                           new_cells, current_inds, new_inds, dist,
-                           velocity_mults, diff_mults))
+    # add the travel times. With DORADO_COBOL=1 the moved-branch math
+    # runs through the batched COBOL kernel: moved flags come from the
+    # final (override-applied) indices, and one diffusion uniform per
+    # moved particle in index order is drawn from the reference stream
+    # when diff_coeff > 0, matching calc_travel_times' draw placement.
+    if cw.cobol_active():
+        n_particles_travel = len(new_inds)
+        moved_flags = np.array(
+            [0 if (new_inds[i][0] == inds[i][0]
+                   and new_inds[i][1] == inds[i][1]) else 1
+             for i in range(n_particles_travel)], dtype=np.int32)
+        moved_idx = [i for i in range(n_particles_travel)
+                     if moved_flags[i] == 1]
+        if Particles.diff_coeff > 0:
+            diff_u = np.zeros(n_particles_travel)
+            diff_u[moved_idx] = np.random.random(len(moved_idx))
+        else:
+            diff_u = np.zeros(n_particles_travel)
+        dist_arr = np.array(dist, dtype=np.float64) \
+            if dist else np.zeros(0, dtype=np.float64)
+        old_vel = np.zeros(n_particles_travel)
+        new_vel = np.zeros(n_particles_travel)
+        ang_new = np.zeros(n_particles_travel)
+        ang_old = np.zeros(n_particles_travel)
+        for i in moved_idx:
+            x, y = inds[i]
+            nx, ny = new_inds[i]
+            w = new_cells[i]
+            old_vel[i] = Particles.velocity[x, y]
+            new_vel[i] = Particles.velocity[nx, ny]
+            ang_new[i] = Particles.angles.flat[w]
+            ang_old[i] = Particles.velocity_angle[x, y]
+        temp_travel = cw.travel_times(
+            dist_arr, old_vel, new_vel, ang_new, ang_old, diff_u,
+            np.array(diff_mults, dtype=np.float64),
+            np.array(velocity_mults, dtype=np.float64), moved_flags,
+            Particles.diff_coeff)
+    else:
+        temp_travel = list(map(lambda w, x, y, z, vm, dm:
+                               calc_travel_times(Particles, w, x, y, z,
+                                                 velocity_mult=vm,
+                                                 diff_mult=dm),
+                               new_cells, current_inds, new_inds, dist,
+                               velocity_mults, diff_mults))
     # parked steps book the stranding clock instead of a travel time
     for i, parked in enumerate(park_mask):
         if parked:

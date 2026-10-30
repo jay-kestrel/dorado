@@ -594,7 +594,7 @@ def get_time_state(walk_data, target_time, verbose=None):
         for var in optional_vars:
             optional_data[var].append(walk_data[var][ii][tt])
         if times_ii[-1] < target_time:
-            logger.info('Note: Particle '+str(ii)+' never reached target_time')
+            logger.info('Note: Particle %d never reached target_time', ii)
 
     # stable contract: optional_data is always returned (empty when no
     # optional variables were tracked) so callers can unpack a 4-tuple
@@ -777,9 +777,10 @@ def plot_exposure_time(walk_data,
                 k = int(np.searchsorted(frac_exited, lv, side='left'))  # first index where CDF >= lv
                 k = max(0, min(k, len(full_time_vect) - 1))
                 etime = full_time_vect[k] / timedelta  # same units as x-axis (days if timedelta=86400)
-                logger.info(f"E{int(lv*100)}: {etime:.3g} {timeunit}")
+                logger.info("E%d: %.3g %s", int(lv * 100), etime, timeunit)
             else:
-                logger.info(f"E{int(lv*100)}: not reached (max F={max_total:.3f})")
+                logger.info("E%d: not reached (max F=%.3f)",
+                            int(lv * 100), max_total)
 
         right_ax = ax.twinx()
         right_ax.set_ylim(ax.get_ylim())
@@ -938,11 +939,12 @@ def plot_exposure_time_thresholds(walk_data,
     for lv in (0.50, 0.75, 0.90):
         idx = int(np.searchsorted(smooth_CDF, lv))
         if idx >= len(smooth_time_vect):
-            logger.info(f'E{int(lv*100)}: not reached '
-                        f'(max F={smooth_CDF[-1]:.3f})')
+            logger.info('E%d: not reached (max F=%.3f)',
+                        int(lv * 100), smooth_CDF[-1])
         else:
-            logger.info(f'E{int(lv*100)}: '
-                        f'{int(smooth_time_vect[idx] / timedelta)} {timeunit}')
+            logger.info('E%d: %d %s',
+                        int(lv * 100),
+                        int(smooth_time_vect[idx] / timedelta), timeunit)
 
     for yval in [0.5, 0.75, 0.90]:
         ax1.axhline(y=yval, color='gray', linestyle='--', linewidth=0.75)

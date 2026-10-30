@@ -18,14 +18,14 @@ def particles(**options):
         cell_type=np.ones((9, 9)), dx=2.0, model="DeltaRCM",
         theta=1.0, diff_coeff=0.2, **options,
     )
-    p = pt.Particles(params)
+    p = pt.Particles(params, backend="python")
     p.weight[:] = 0.0
     p.weight[:, :, 5] = 1.0  # deterministic eastward proposal
     return p
 
 
 def stage(p):
-    """Only a test adapter; the production backend switch is a separate task."""
+    """Test adapter; production staging lives in particle_track.py."""
     return _native.RoutingFields(
         np.ascontiguousarray(p.weight, dtype=np.float64),
         np.ascontiguousarray(p.velocity, dtype=np.float64),

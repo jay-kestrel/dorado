@@ -51,6 +51,10 @@ def run_iter(pobj_and_seed):
     # every worker otherwise inherits an identical copy of the parent RNG
     # state and all cores would produce identical random walks
     np.random.seed(worker_seed)
+    # ditto for the native per-particle streams: each worker gets its own
+    # stream set so ensembles stay independent on either backend (a no-op
+    # on the python backend)
+    pobj.particles.reseed(worker_seed)
 
     pobj.particles.generate_particles(pobj.Np_tracer, pobj.seed_xloc,
                                       pobj.seed_yloc,
@@ -117,7 +121,8 @@ class parallel_obj:
 
 
 def parallel_routing(particles, num_iter, Np_tracer, seed_xloc, seed_yloc,
-                     num_cores, particle_size=None, particle_type=None):
+                     num_cores, particle_size=None, particle_type=None,
+                     mp_context=None):
     """Do the parallel routing of particles.
 
     Function to do parallel routing of particles. Does this by duplicating the
@@ -162,6 +167,13 @@ def parallel_routing(particles, num_iter, Np_tracer, seed_xloc, seed_yloc,
             applied to all Np_tracer particles, or a list of names of
             length Np_tracer). The default value is None (no types).
 
+        mp_context : `multiprocessing.context.BaseContext`, optional
+            Multiprocessing start-method context used to create the worker
+            pool, e.g. ``multiprocessing.get_context('spawn')``. The
+            default value is None (the platform's default start method).
+            Each worker reseeds its random number generator either way, so
+            trajectories stay distinct under every start method.
+
     **Outputs** :
 
         par_result : `list`
@@ -189,8 +201,12 @@ def parallel_routing(particles, num_iter, Np_tracer, seed_xloc, seed_yloc,
     # define list to pass to actual function that will be mapped to in parallel
     p_list = [(pobj, int(seed)) for seed in worker_seeds]
 
-    # create the parallel pool and run the process
-    p = Pool(processes=num_cores)
+    # create the parallel pool and run the process; an explicit context
+    # selects a start method (e.g. spawn), the platform default otherwise
+    if mp_context is None:
+        p = Pool(processes=num_cores)
+    else:
+        p = mp_context.Pool(processes=num_cores)
     par_result = p.map(run_iter, p_list)
     p.terminate()
 

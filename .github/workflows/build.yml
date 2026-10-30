@@ -20,6 +20,13 @@ on:
   schedule:
     - cron: '0 0 3 * *'  # run workflow at 12AM on third day of every month
 
+# Least-privilege GITHUB_TOKEN: the org default workflow token is read-only
+# (the failed master builds' logs show "GITHUB_TOKEN Permissions: Contents:
+# read"), and no permissions block previously overrode it. Everything runs
+# read-only; only the docs job elevates, for the gh-pages deploy.
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ${{ matrix.os }}
@@ -133,9 +140,59 @@ jobs:
         uv run --no-sync python examples/traveltime_straight_channel.py
         uv run --no-sync python examples/nourishment_example.py
         uv run --no-sync python examples/particle_sizes_types.py
+        uv run --no-sync python examples/traveltime_seeding_strategies.py
         cd examples
         uv run --no-sync python unsteady_example.py
 
+
+  wheel-smoke:
+    # F7: the build and examples jobs install the source tree (-e .), which
+    # cannot see a packaging defect; this job builds the wheel, installs it
+    # into a fresh venv with its dependencies, and runs the documented
+    # quickstart from the installed copy.
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+    - name: Check out source (shell fetch; external actions are blocked by repo policy)
+      env:
+        REF: ${{ github.event_name == 'pull_request' && format('refs/pull/{0}/merge', github.event.number) || github.ref }}
+      run: |
+        git config --global --add safe.directory "$GITHUB_WORKSPACE"
+        git init -q "$GITHUB_WORKSPACE"
+        git fetch -q --depth=1 "https://github.com/${{ github.repository }}.git" "$REF"
+        git checkout -q --detach FETCH_HEAD
+    - name: Install Rust toolchain (shell rustup; external actions are blocked by repo policy)
+      run: |
+        # maturin compiles the native extension during the wheel build
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --profile minimal
+        echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+    - name: Build wheel in a seeded venv (uv-managed; no external actions)
+      run: |
+        if command -v python >/dev/null 2>&1; then PY=python; else PY=python3; fi
+        "$PY" -m pip install uv
+        # --seed puts pip inside the venv so `python -m pip wheel` works,
+        # mirroring the tests/test_packaging.py build path
+        uv venv --seed --python "3.11" build-venv
+        if [ -f build-venv/bin/python ]; then BPY=build-venv/bin/python; else BPY=build-venv/Scripts/python.exe; fi
+        "$BPY" -m pip wheel --no-deps -w dist .
+        echo "BPY=$BPY" >> "$GITHUB_ENV"
+    - name: Install the wheel into a fresh venv (clean install, with deps)
+      run: |
+        uv venv --python "3.11" smoke-venv
+        if [ -f smoke-venv/bin/python ]; then SPY=smoke-venv/bin/python; else SPY=smoke-venv/Scripts/python.exe; fi
+        uv pip install --python "$SPY" dist/*.whl
+        echo "SPY=$SPY" >> "$GITHUB_ENV"
+    - name: Run the documented quickstart from the installed wheel
+      env:
+        MPLBACKEND: Agg
+      run: |
+        # run from outside the checkout so `import dorado` can only resolve
+        # from the installed wheel
+        cd "$HOME"
+        "$SPY" "$GITHUB_WORKSPACE/docs/source/pyplots/quickstart/demo1.py"
+        echo "quickstart OK from installed wheel"
 
   conda:
     runs-on: ubuntu-latest
@@ -191,7 +248,40 @@ jobs:
       run: ruff check dorado/ tests/
 
 
+  rust:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+    - name: Check out source (shell fetch; external actions are blocked by repo policy)
+      env:
+        REF: ${{ github.event_name == 'pull_request' && format('refs/pull/{0}/merge', github.event.number) || github.ref }}
+      run: |
+        git config --global --add safe.directory "$GITHUB_WORKSPACE"
+        git init -q "$GITHUB_WORKSPACE"
+        git fetch -q --depth=1 "https://github.com/${{ github.repository }}.git" "$REF"
+        git checkout -q --detach FETCH_HEAD
+    - name: Install Rust toolchain (shell rustup; external actions are blocked by repo policy)
+      run: |
+        # fmt/clippy components needed by the checks below
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --profile minimal --component clippy,rustfmt
+        echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+    - name: Format check
+      run: cargo fmt --manifest-path rust/Cargo.toml --all -- --check
+    - name: Clippy
+      run: cargo clippy --manifest-path rust/Cargo.toml --all-targets -- -D warnings
+    - name: Test
+      run: cargo test --manifest-path rust/Cargo.toml
+
+
   docs:
+    # The deploy step pushes gh-pages with secrets.GITHUB_TOKEN, which needs
+    # contents: write. Under the org's read-only default token that push
+    # fails with git exit code 128 — the docs failure seen in master push run
+    # 41109358969 — so this job elevates its token explicitly.
+    permissions:
+      contents: write
     runs-on: ubuntu-latest
     env:
       PIP_BREAK_SYSTEM_PACKAGES: "1"  # ubuntu system python is externally managed
@@ -247,3 +337,24 @@ jobs:
         git add -A
         git commit -qm "docs: deploy HTML from commit ${GITHUB_SHA}"
         git push -q -f "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git" gh-pages
+
+  ctest:
+    # C port (c/): standalone C11 + CMake, zero external dependencies, so no
+    # package installation is needed. Kept as its own job so the Python
+    # matrix and the native CTest suite fail independently.
+    runs-on: ubuntu-latest
+    steps:
+    - name: Check out source (shell fetch; external actions are blocked by repo policy)
+      env:
+        REF: ${{ github.event_name == 'pull_request' && format('refs/pull/{0}/merge', github.event.number) || github.ref }}
+      run: |
+        git config --global --add safe.directory "$GITHUB_WORKSPACE"
+        git init -q "$GITHUB_WORKSPACE"
+        git fetch -q --depth=1 "https://github.com/${{ github.repository }}.git" "$REF"
+        git checkout -q --detach FETCH_HEAD
+    - name: Configure (CMake, Release, warnings as errors)
+      run: cmake -S c -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_FLAGS=-Werror
+    - name: Build
+      run: cmake --build build
+    - name: Test (ctest)
+      run: cd build && ctest --output-on-failure

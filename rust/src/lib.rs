@@ -1,5 +1,12 @@
 //! Validated Python/NumPy boundary; the routing loop lives in `routing`.
+pub mod driver;
+pub mod fields;
+pub mod json_out;
+pub mod npy;
+pub mod rng;
 mod routing;
+pub mod walker;
+pub mod weight;
 
 use numpy::{
     PyReadonlyArray1, PyReadonlyArray2, PyReadonlyArray3, PyReadwriteArray1, PyReadwriteArray2,
@@ -11,6 +18,7 @@ use rand_chacha::ChaCha8Rng;
 use rayon::prelude::*;
 use routing::{Behavior, Fields, Outcome, Particle, Release};
 use std::collections::HashMap;
+use std::path::Path;
 
 fn require(condition: bool, message: &str) -> PyResult<()> {
     if condition {
@@ -512,6 +520,41 @@ fn kernel_version() -> &'static str {
     env!("CARGO_PKG_VERSION")
 }
 
+/// Run the exact-parity steady kernel end to end on a normalized fixture
+/// directory (the same contract as the `dorado_rust` bin driver): load the
+/// fixture untimed, time field derivation + seeding + the iteration loop,
+/// then write `walk_data.json` + `timing.json` under `out_dir`. Returns a
+/// short summary string. Overrides mirror the bin's CLI options.
+#[pyfunction]
+#[pyo3(signature = (input_dir, out_dir, particles=None, iterations=None, seed=None,
+                    seed_x=None, seed_y=None))]
+fn run_benchmark_fixture(
+    input_dir: &str,
+    out_dir: &str,
+    particles: Option<usize>,
+    iterations: Option<usize>,
+    seed: Option<u32>,
+    seed_x: Option<&str>,
+    seed_y: Option<&str>,
+) -> PyResult<String> {
+    let summary = crate::driver::run_and_write(
+        Path::new(input_dir),
+        Path::new(out_dir),
+        particles,
+        iterations,
+        seed,
+        seed_x,
+        seed_y,
+    )
+    .map_err(PyValueError::new_err)?;
+    Ok(format!(
+        "{} appended steps in {:.6}s; walk data: {}",
+        summary.appended_steps,
+        summary.seconds,
+        summary.walk_data_path.display()
+    ))
+}
+
 #[pymodule]
 fn _native(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<RoutingFields>()?;
@@ -520,5 +563,6 @@ fn _native(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(step_particles, module)?)?;
     module.add_function(wrap_pyfunction!(_pick, module)?)?;
     module.add_function(wrap_pyfunction!(kernel_version, module)?)?;
+    module.add_function(wrap_pyfunction!(run_benchmark_fixture, module)?)?;
     Ok(())
 }

@@ -200,7 +200,10 @@ def cmd_demo(args: argparse.Namespace) -> int:
     seed_xloc, seed_yloc = SEED_LOCATIONS[args.field]
     try:
         params, _ = _params_from_npz(path, FIELD_MODELS[args.field])
-        particles = Particles(params)
+        # pass the seed through so the default (rust) backend is
+        # deterministic too; np.random.seed below keeps seeding and the
+        # python path on the repo's legacy-global convention
+        particles = Particles(params, seed=args.seed)
         np.random.seed(args.seed)  # repo convention: legacy global RNG
         particles.generate_particles(args.particles, seed_xloc, seed_yloc)
         for _ in range(args.steps):
