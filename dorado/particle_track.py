@@ -283,6 +283,15 @@ class Particles():
         except Exception:
             logger.info("Gamma parameter not specified - using 0.05")
             self.gamma = 0.05
+        # gamma outside [0, 1] produces negative routing weights and a
+        # badly biased sampling distribution -- warn and clamp, matching
+        # the diff_coeff pattern above
+        if self.gamma < 0 or self.gamma > 1:
+            if self.verbose:
+                warnings.warn("Specified gamma value is outside the range"
+                              " [0, 1]. Clamping to the nearest valid"
+                              " value")
+            self.gamma = min(max(self.gamma, 0.0), 1.0)
 
         try:
             diff_coeff = params.diff_coeff
