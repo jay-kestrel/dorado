@@ -500,6 +500,7 @@ class Particles():
             self.distances = params.distances
         else:
             # defined if not given
+            logger.info("params.distances not provided - using D8 defaults")
             self.distances = np.array([[sqrt2, 1, sqrt2],
                                        [1, 1, 1],
                                        [sqrt2, 1, sqrt2]])
@@ -510,6 +511,7 @@ class Particles():
             self.ivec = params.ivec
         else:
             # defined if not given
+            logger.info("params.ivec not provided - using D8 defaults")
             self.ivec = np.array([[-sqrt05, 0, sqrt05],
                                   [-1, 0, 1],
                                   [-sqrt05, 0, sqrt05]])
@@ -520,6 +522,7 @@ class Particles():
             self.jvec = params.jvec
         else:
             # defined if not given
+            logger.info("params.jvec not provided - using D8 defaults")
             self.jvec = np.array([[-sqrt05, -1, -sqrt05],
                                   [0, 0, 0],
                                   [sqrt05, 1, sqrt05]])
@@ -530,6 +533,7 @@ class Particles():
             self.iwalk = params.iwalk
         else:
             # defined if not given
+            logger.info("params.iwalk not provided - using D8 defaults")
             self.iwalk = np.array([[-1, 0, 1],
                                    [-1, 0, 1],
                                    [-1, 0, 1]])
@@ -540,6 +544,7 @@ class Particles():
             self.jwalk = params.jwalk
         else:
             # defined if not given
+            logger.info("params.jwalk not provided - using D8 defaults")
             self.jwalk = np.array([[-1, -1, -1],
                                    [0, 0, 0],
                                    [1, 1, 1]])
@@ -550,6 +555,7 @@ class Particles():
             self.angles = params.angles
         else:
             # defined if not given
+            logger.info("params.angles not provided - using D8 defaults")
             self.angles = np.array([[3*pi/4, pi/2, pi/4],
                                     [pi, 0, 0],
                                     [5*pi/4, 3*pi/2, 7*pi/4]])
