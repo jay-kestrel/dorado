@@ -1,6 +1,10 @@
+import copy
+import json
+
 import pytest
 import warnings
 from dorado import routines
+import dorado.particle_track as pt
 
 class DummyParams:
     def __init__(self):
@@ -115,12 +119,50 @@ class _UnusedParticle:
     building a full routing domain."""
 
 
-def test_steady_plots_zero_iterations_does_not_raise(tmp_path):
-    """BUG-5: num_iter=0 with save_output=True crashed with an
-    UnboundLocalError at the json dump."""
-    assert routines.steady_plots(_UnusedParticle(), 0,
-                                 folder_name=str(tmp_path)) is None
-    assert not (tmp_path / 'data' / 'data.txt').exists()
+class TestZeroIterations:
+    """num_iter=0 steady runs must return the particle's walk data
+    unchanged (the seeded state), per the DO-2 spec contract."""
+
+    def _seeded_particle(self):
+        # DeltaRCM case, mirroring tests/test_examplecases.py
+        rcm_data = np.load('tests/data/ex_deltarcm_data.npz')
+        params = pt.modelParams()
+        params.stage = rcm_data['stage']
+        params.depth = rcm_data['depth']
+        params.dx = 50.
+        # no discharge data so use 0s as substitute
+        params.qx = np.zeros_like(params.depth)
+        params.qy = np.zeros_like(params.depth)
+        params.model = 'DeltaRCM'
+        particle = pt.Particles(params)
+        np.random.seed(0)  # fix the random seed
+        particle.generate_particles(1, [16], [140])
+        return particle
+
+    def test_steady_plots_zero_iterations_returns_unchanged_walk_data(self):
+        """BUG-5: num_iter=0 must return the seeded walk data unchanged,
+        not None."""
+        particle = self._seeded_particle()
+        expected = copy.deepcopy(particle.walk_data)
+
+        result = routines.steady_plots(particle, 0, save_output=False)
+
+        assert result is particle.walk_data
+        assert result == expected
+
+    def test_steady_plots_zero_iterations_saves_unchanged_data(self, tmp_path):
+        """BUG-5: the default save_output=True path crashed with an
+        UnboundLocalError at the json dump; it must save the seeded
+        walk data unchanged instead."""
+        particle = self._seeded_particle()
+        expected = copy.deepcopy(particle.walk_data)
+
+        result = routines.steady_plots(particle, 0, folder_name=str(tmp_path))
+
+        assert result is particle.walk_data
+        assert result == expected
+        with open(tmp_path / 'data' / 'data.txt') as f:
+            assert json.load(f) == expected
 
 
 def test_time_plots_zero_iterations_does_not_raise(tmp_path):
