@@ -1,6 +1,6 @@
 [build-system]
-requires = ["setuptools>=64.0", "setuptools_scm[toml]>=6.2"]
-build-backend = "setuptools.build_meta"
+requires = ["maturin>=1.9.4,<2.0"]
+build-backend = "maturin"
 
 [project]
 name = "pydorado"
@@ -21,7 +21,8 @@ classifiers = [
         'Programming Language :: Python :: 3.11',
         'Programming Language :: Python :: 3.12',
         'Programming Language :: Python :: 3.13',
-        'Programming Language :: Python :: 3.14'
+        'Programming Language :: Python :: 3.14',
+        'Programming Language :: Rust'
 ]
 requires-python = ">=3.11"
 dependencies = [
@@ -54,12 +55,16 @@ docs = [
 [project.scripts]
 pydorado = "dorado.cli:main"
 
-[tool.setuptools.package-data]
-"dorado" = ["*.txt", "*.npz"]
-"dorado.example_data" = ["*.npz"]
+[tool.maturin]
+# Rust crate in a subdirectory; the Python package stays at the repo root.
+manifest-dir = "rust"
+python-source = "."
+# Build the extension as `dorado/_native` (imported as `dorado._native`).
+module-name = "dorado._native"
+# Link as a Python extension module (do not link libpython into the cdylib).
+features = ["pyo3/extension-module"]
 
-[tool.setuptools]
-packages = ["dorado", "dorado.example_data"]
+
 
 [tool.pytest.ini_options]
 pythonpath = ["."]

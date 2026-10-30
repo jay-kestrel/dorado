@@ -1,0 +1,20 @@
+[package]
+name = "dorado-native"
+version = "2.7.1"
+edition = "2021"
+# pyo3 0.30 requires at least this rustc version.
+rust-version = "1.85"
+description = "Native particle-routing kernel for the dorado Python package (PyO3 extension module)"
+license = "MIT"
+publish = false
+
+[lib]
+# Extension module Python imports as `dorado._native` (see module-name in
+# pyproject.toml). Must match the `#[pymodule]` name in src/lib.rs.
+name = "_native"
+crate-type = ["cdylib"]
+
+[dependencies]
+# extension-module is enabled by maturin at build time (see [tool.maturin]
+# features) so `cargo test` links against libpython and works standalone.
+pyo3 = { version = "0.30.1", features = ["abi3-py311"] }
