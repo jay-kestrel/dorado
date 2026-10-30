@@ -158,7 +158,9 @@ class Particles():
         # Define the water depth array
         if getattr(params, 'depth', None) is not None:
             try:
-                self.depth = params.depth
+                # copy so the in-place cleanup below does not modify the
+                # caller's array
+                self.depth = params.depth.copy()
                 self.depth[np.isnan(self.depth)] = 0
             except Exception:
                 raise ValueError("Water depth array incorrectly defined.")
@@ -179,7 +181,9 @@ class Particles():
         # Define the water stage array
         if getattr(params, 'stage', None) is not None:
             try:
-                self.stage = params.stage
+                # copy so the in-place cleanup below does not modify the
+                # caller's array
+                self.stage = params.stage.copy()
                 self.stage[self.depth == 0] = np.nan
             except Exception:
                 raise ValueError("Water stage array incorrectly defined.")
@@ -196,31 +200,31 @@ class Particles():
         else:
             raise ValueError("Insufficient information: Specify stage")
 
-        # check if hydrodynamic model input has been specified
-        if getattr(params, 'model', None) is not None:
-            pass
-        else:
-            params.model = []
+        # check if hydrodynamic model input has been specified (use a
+        # local value -- do not modify the caller's params object)
+        model = getattr(params, 'model', None)
+        if model is None:
+            model = []
 
         # Define discharge and velocities for all cells in domain
-        if params.model == 'DeltaRCM':
+        if model == 'DeltaRCM':
             if params.qx is not None and params.qy is not None:
-                self.qx = params.qx
+                self.qx = params.qx.copy()
                 self.qx[np.isnan(self.qx)] = 0
                 self.u = self.qx*self.depth/(self.depth**2 + 1e-8)
                 self.u[np.isnan(self.u)] = 0
 
-                self.qy = params.qy
+                self.qy = params.qy.copy()
                 self.qy[np.isnan(self.qy)] = 0
                 self.v = self.qy*self.depth/(self.depth**2 + 1e-8)
                 self.v[np.isnan(self.v)] = 0
 
             elif params.u is not None and params.v is not None:
-                self.u = params.u
+                self.u = params.u.copy()
                 self.u[np.isnan(self.u)] = 0
                 self.qx = self.u*self.depth
 
-                self.v = params.v
+                self.v = params.v.copy()
                 self.v[np.isnan(self.v)] = 0
                 self.qy = self.v*self.depth
 
@@ -234,7 +238,7 @@ class Particles():
                 self.u = self.qx*self.depth/(self.depth**2 + 1e-8)
                 self.u[np.isnan(self.u)] = 0
 
-                self.qy = params.qx
+                self.qy = params.qx.copy()
                 self.qy[np.isnan(self.qy)] = 0
                 self.v = self.qy*self.depth/(self.depth**2 + 1e-8)
                 self.v[np.isnan(self.v)] = 0
@@ -244,7 +248,7 @@ class Particles():
                 self.u[np.isnan(self.u)] = 0
                 self.qx = self.u*self.depth
 
-                self.v = params.u
+                self.v = params.u.copy()
                 self.v[np.isnan(self.v)] = 0
                 self.qy = self.v*self.depth
 
@@ -281,16 +285,17 @@ class Particles():
             self.gamma = 0.05
 
         try:
-            if params.diff_coeff < 0:
+            diff_coeff = params.diff_coeff
+            if diff_coeff < 0:
                 if self.verbose:
                     warnings.warn("Specified diffusion coefficient is negative"
                                   ". Rounding up to zero")
-                params.diff_coeff = 0.0
-            elif params.diff_coeff >= 2:
+                diff_coeff = 0.0
+            elif diff_coeff >= 2:
                 if self.verbose:
                     warnings.warn("Diffusion behaves non-physically when"
                                   " coefficient >= 2")
-            self.diff_coeff = float(params.diff_coeff)
+            self.diff_coeff = float(diff_coeff)
         except Exception:
             if getattr(params, 'steepest_descent', False) is True:
                 logger.info("Diffusion disabled for steepest descent")
@@ -427,9 +432,10 @@ class Particles():
             'v': self.v,
         }
 
-        # Read optional variables from params
+        # Read optional variables from params (copy the list so appending
+        # below does not modify the caller's list)
         if getattr(params, 'particle_variables', None) is not None:
-            self.particle_variables = params.particle_variables
+            self.particle_variables = list(params.particle_variables)
         else:
             self.particle_variables = []
 
