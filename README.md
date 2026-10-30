@@ -59,10 +59,13 @@ For additional installation options and instructions, refer to the [installation
 
 `dorado` logs through the standard `logging` module on the `dorado` logger; out of the box, warnings and above are surfaced to stderr. Two ways to turn the level up:
 
-- **Environment variable:** set `DORADO_LOG_LEVEL` to one of `DEBUG`, `INFO`, `WARNING`, `ERROR`, or `CRITICAL` before importing `dorado`.
+- **Environment variable:** set `DORADO_LOG_LEVEL` to one of `DEBUG`, `INFO`, `WARNING`, `ERROR`, or `CRITICAL` before importing `dorado`:
+
+      DORADO_LOG_LEVEL=INFO python my_script.py
+
 - **Programmatically:** call `dorado.setup_logging("INFO")`, optionally passing a custom `logging.Handler` (for example `logging.FileHandler("dorado.log")`).
 
-The legacy `verbose` parameter is deprecated and maps onto the logger; prefer the options above. See the [logging guide](docs/source/userguide/index.rst) and the [`dorado.logging_config` API reference](docs/source/apiref/loggingconfig.rst) for details.
+An invalid `DORADO_LOG_LEVEL` value does not fail the import — `dorado` logs a warning naming the bad value and falls back to `WARNING`. The legacy `verbose` parameter is deprecated and maps onto the logger; prefer the options above. See the [logging guide](docs/source/userguide/index.rst) and the [`dorado.logging_config` API reference](docs/source/apiref/loggingconfig.rst) for details.
 
 ## Command-line interface
 
@@ -75,23 +78,6 @@ Installing the package exposes a `pydorado` console command with three subcomman
 ## Benchmarks
 
 The routing kernel is timed by the harness in [`benchmarks/`](benchmarks/README.md), whose `--quick` mode runs in CI on every pull request. See the harness README for the workloads, the timing contract, and how to run the full benchmark.
-
-### Configuring log output
-dorado logs through the standard `logging` module under the `dorado` logger. The `DORADO_LOG_LEVEL` environment variable controls log visibility at import time:
-
-- **Unset** (default): the package attaches no handler and leaves the logger at Python's default level, so WARNING-and-above records (warnings and errors) still reach stderr while informational narration stays silent.
-- **Set** to `DEBUG`, `INFO`, `WARNING`, or `ERROR`: the `dorado` logger is configured at that level with a handler writing to stderr. For example:
-
-        DORADO_LOG_LEVEL=INFO python my_script.py
-
-An invalid value does not fail the import — dorado logs a warning naming the bad value and falls back to `WARNING`.
-
-Logging can also be configured programmatically at any time:
-
-    import dorado
-    dorado.setup_logging("INFO")
-
-The deprecated `verbose` parameter on dorado's routines is still accepted, but new code should configure logging with `DORADO_LOG_LEVEL` or `setup_logging()` instead.
 
 ## Contributing
 

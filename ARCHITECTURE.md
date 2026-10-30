@@ -79,11 +79,11 @@ The code is layered so that the stochastic routing kernel knows nothing about pl
 
 ## Randomness and reproducibility
 
-All stochasticity — random seed placement, neighbor selection, and travel-time diffusion — draws from NumPy's global random state (`np.random`). `dorado` never seeds or restores it itself; for reproducible runs, seed the global RNG (e.g. `np.random.seed(...)`) before generating and routing particles, as the test suite and benchmark harness do. Because the global state is shared, concurrently executing walks (e.g. `parallel_routing` workers) are not independent random streams unless the caller arranges per-process seeding.
+All stochasticity — random seed placement, neighbor selection, and travel-time diffusion — draws from NumPy's global random state (`np.random`). `dorado` never seeds or restores it itself; for reproducible runs, seed the global RNG (e.g. `np.random.seed(...)`) before generating and routing particles, as the test suite and benchmark harness do. `parallel_routing` draws one seed per worker from the parent's global RNG and reseeds each worker before it walks, so its workers produce independent — not identical — random walks, and a parallel run stays reproducible when the global RNG is seeded before the call.
 
 ## Parallel routing
 
-`parallel_routing` maps `run_iter` over a `multiprocessing.Pool`: each worker receives a `parallel_obj` carrying the parameters, seed lists, and iteration count, generates its own particles, and runs `run_walk` for its share of the iterations. `combine_result` merges the per-worker `walk_data` dictionaries into one. Since workers each seed and walk their own particle set, the result is the union of independent batches — see the randomness note above for the reproducibility implications.
+`parallel_routing` maps `run_iter` over a `multiprocessing.Pool`: each worker receives a `parallel_obj` carrying the parameters, seed lists, and iteration count, reseeds its own RNG from a per-worker seed drawn from the parent's global RNG (without the reseed every worker would inherit the same state and produce identical walks), generates its own particles — accepting the same `particle_size`/`particle_type` attributes as `generate_particles` — and runs `run_walk` for its share of the iterations. `combine_result` merges the per-worker `walk_data` dictionaries into one. See the randomness note above for the reproducibility implications.
 
 ## Logging
 

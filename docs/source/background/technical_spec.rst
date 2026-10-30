@@ -113,7 +113,7 @@ The ``walk_data`` schema
 Randomness and reproducibility
 ------------------------------
 
-All stochasticity — random seed placement, neighbor selection, and the travel-time diffusion draw — uses NumPy's global random state. ``dorado`` never seeds it; callers who need reproducible runs should seed the global RNG (e.g. ``np.random.seed(...)``) before generating and routing particles, as the test suite does. Because the state is global and shared, concurrently executing walks (e.g. ``parallel_routing`` workers) are not independent random streams unless the caller arranges per-process seeding.
+All stochasticity — random seed placement, neighbor selection, and the travel-time diffusion draw — uses NumPy's global random state. ``dorado`` never seeds it; callers who need reproducible runs should seed the global RNG (e.g. ``np.random.seed(...)``) before generating and routing particles, as the test suite does. ``parallel_routing`` draws one seed per worker from the parent's global RNG and reseeds each worker before it walks, so its workers produce independent — not identical — random walks, and a run stays reproducible when the global RNG is seeded before the call.
 
 Assumptions and limitations
 ---------------------------
