@@ -92,9 +92,11 @@ def _find_common_indices_info(walk_data, xind_range, yind_range):
         walk_data : 'dict'
             Dictionary with 'xinds', 'yinds', and 'travel_times'
         xind_range : 'tuple (int, int)'
-            Minimum and maximum bounds of x-indices defining the chunk.
+            Minimum (inclusive) and maximum (exclusive) bounds of x-indices
+            defining the chunk.
         yind_range : 'tuple (int, int)'
-            Minimum and maximum bounds of y-indices defining the chunk.
+            Minimum (inclusive) and maximum (exclusive) bounds of y-indices
+            defining the chunk.
 
     **Outputs** :
         
@@ -112,7 +114,11 @@ def _find_common_indices_info(walk_data, xind_range, yind_range):
     for idx in range(len(xinds)):
         if xinds[idx] and yinds[idx]:
             x0, y0 = xinds[idx][0], yinds[idx][0]
-            if xind_min <= x0 <= xind_max and yind_min <= y0 <= yind_max:
+            # half-open interval [min, max): chunks are sized as [r0, r1)
+            # numpy slices, so the inclusive upper bound used here made a
+            # particle starting exactly on a chunk edge count towards both
+            # chunks
+            if xind_min <= x0 < xind_max and yind_min <= y0 < yind_max:
                 for key in walk_data:
                     common_indicies[key].append(walk_data[key][idx])
 
