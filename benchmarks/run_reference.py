@@ -17,6 +17,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import platform
 import subprocess
 import sys
@@ -32,6 +33,7 @@ sys.path.insert(0, str(ROOT))
 
 # Imported after the sys.path bootstrap so the script runs from a source
 # checkout without installing the package.
+from dorado import cobol_walk as cw  # noqa: E402
 from dorado.particle_track import Particles, modelParams  # noqa: E402
 
 # Default seeding regions per field, following example_data/define_params.py
@@ -95,9 +97,9 @@ def metadata(input_dir: Path, manifest: dict, particles: int, iterations: int,
     def git(*args: str) -> str:
         return subprocess.check_output(["git", *args], cwd=ROOT, text=True).strip()
 
-    return {
+    report = {
         "schema_version": 1,
-        "implementation": "python",
+        "implementation": ("cobol" if cw.cobol_active() else "python"),
         "fixture_dir": str(input_dir),
         "model": manifest["model"],
         "particles": particles,
@@ -118,6 +120,9 @@ def metadata(input_dir: Path, manifest: dict, particles: int, iterations: int,
         "python": platform.python_version(), "numpy": np.__version__,
         "platform": platform.platform(), "machine": platform.machine(),
     }
+    if cw.cobol_active():
+        report["gnucobol_version"] = cw.gnucobol_version()
+    return report
 
 
 def main(argv: list[str] | None = None) -> int:
