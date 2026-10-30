@@ -51,6 +51,10 @@ def run_iter(pobj_and_seed):
     # every worker otherwise inherits an identical copy of the parent RNG
     # state and all cores would produce identical random walks
     np.random.seed(worker_seed)
+    # ditto for the native per-particle streams: each worker gets its own
+    # stream set so ensembles stay independent on either backend (a no-op
+    # on the python backend)
+    pobj.particles.reseed(worker_seed)
 
     pobj.particles.generate_particles(pobj.Np_tracer, pobj.seed_xloc,
                                       pobj.seed_yloc,

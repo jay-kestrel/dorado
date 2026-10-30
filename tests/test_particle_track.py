@@ -806,13 +806,45 @@ def attribute_params(shape=(20, 15)):
 def seeded_attribute_run(nparticles=3, niter=6, **gen_kwargs):
     """Run a seeded generate_particles + run_iteration session."""
     np.random.seed(42)
-    particle = particle_track.Particles(attribute_params())
+    particle = particle_track.Particles(attribute_params(),
+                                        backend='python')
     particle.generate_particles(nparticles, [2, 3], [2, 3], method='exact',
                                 **gen_kwargs)
     walk_data = None
     for _ in range(niter):
         walk_data = particle.run_iteration()
     return walk_data
+
+
+def test_dorado_backend_env_overrides_constructor(monkeypatch):
+    """DORADO_BACKEND forces the backend regardless of the constructor."""
+    params = attribute_params()
+    monkeypatch.setenv('DORADO_BACKEND', 'python')
+    forced = particle_track.Particles(params)
+    assert forced.backend == 'python'
+    # even an explicit constructor choice cannot beat the env override
+    assert particle_track.Particles(params, backend='rust').backend == \
+        'python'
+    monkeypatch.setenv('DORADO_BACKEND', 'rust')
+    assert particle_track.Particles(params, backend='python').backend == \
+        'rust'
+
+
+def test_dorado_backend_python_forces_reference_path(monkeypatch):
+    """DORADO_BACKEND=python routes through the legacy walker verbatim."""
+    monkeypatch.setenv('DORADO_BACKEND', 'python')
+    # same seed as seeded_attribute_run so the two runs draw from the
+    # same stream position and must land on identical trajectories
+    np.random.seed(42)
+    particle = particle_track.Particles(attribute_params())
+    particle.generate_particles(3, [2, 3], [2, 3], method='exact')
+    for _ in range(6):
+        walk_data = particle.run_iteration()
+    # identical to the seeded_attribute_run python reference (same seed
+    # stream position, same generate call, same iteration count)
+    reference = seeded_attribute_run()
+    assert walk_data['xinds'] == reference['xinds']
+    assert walk_data['travel_times'] == reference['travel_times']
 
 
 def test_size_length_mismatch_raises():
