@@ -1516,9 +1516,10 @@ def exposure_time(walk_data,
     # single print statement
     if len(_short_list) > 0:
         handle_verbose_deprecation(verbose)
-        logger.info(str(len(_short_list)) + ' Particles within ROI at final'
-              ' timestep.\n' + 'Particles are: ' + str(_short_list) +
-              '\nRun more iterations to get full tail of ETD.')
+        logger.info('%d Particles within ROI at final timestep.\n'
+                    'Particles are: %s\n'
+                    'Run more iterations to get full tail of ETD.',
+                    len(_short_list), _short_list)
 
     return exposure_times.tolist()
 
