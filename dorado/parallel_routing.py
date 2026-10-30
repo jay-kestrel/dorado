@@ -161,7 +161,8 @@ def parallel_routing(particles, num_iter, Np_tracer, seed_xloc, seed_yloc,
     # receives a copy of the same RNG state and all cores produce identical
     # random walks (seeding from the parent keeps runs reproducible when the
     # user seeds the global RNG before calling this function)
-    worker_seeds = np.random.randint(0, 2**32 - 1, size=num_cores)
+    worker_seeds = np.random.randint(0, 2**31 - 1, size=num_cores,
+                                     dtype=np.int64)
 
     # define list to pass to actual function that will be mapped to in parallel
     p_list = [(pobj, int(seed)) for seed in worker_seeds]
