@@ -516,6 +516,19 @@ class Particles():
                                                                      seed_time,
                                                                      method)
 
+        # validate that all seed locations fall inside the domain, as
+        # out-of-bounds indices would otherwise silently wrap around the
+        # domain edges via negative indexing (skip when no particles are
+        # being seeded, e.g. when only restoring previous walk data)
+        L, W = self.depth.shape
+        if len(seed_xloc) > 0 and len(seed_yloc) > 0:
+            if (min(seed_xloc) < 0 or max(seed_xloc) > L - 1
+                    or min(seed_yloc) < 0 or max(seed_yloc) > W - 1):
+                raise ValueError('Seed location is outside of the domain:'
+                                 ' x indices must be in [0, ' + str(L - 1) +
+                                 '] and y indices must be in [0, ' +
+                                 str(W - 1) + '].')
+
         init_walk_data = dict()  # create init_walk_data dictionary
         # define base variables again
         base_vars = self.base_walk_variables
@@ -735,9 +748,10 @@ class Particles():
                 _iter_particles = []
 
                 # Only iterate if this particle isn't already at a boundary:
-                if -1 not in self.cell_type[all_xinds[ii][-1]-1:
+                # (lower slice bounds clamped at 0 as in check_for_boundary)
+                if -1 not in self.cell_type[max(0, all_xinds[ii][-1]-1):
                                             all_xinds[ii][-1]+2,
-                                            all_yinds[ii][-1]-1:
+                                            max(0, all_yinds[ii][-1]-1):
                                             all_yinds[ii][-1]+2]:
                     # Loop until |target time - current time| <
                     #            |target time - estimated next time|

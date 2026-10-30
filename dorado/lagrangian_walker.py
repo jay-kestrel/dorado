@@ -398,8 +398,11 @@ def check_for_boundary(new_inds, current_inds, cell_type):
     # If so, then stop moving particle
     for i in range(0, len(new_inds)):
         # If particle borders an edge, cancel out any additional steps
-        if -1 in cell_type[current_inds[i][0]-1:current_inds[i][0]+2,
-                           current_inds[i][1]-1:current_inds[i][1]+2]:
+        # (lower slice bounds are clamped at 0 so that particles on the
+        # first row/column check a real neighborhood instead of silently
+        # wrapping around the domain via a negative slice)
+        if -1 in cell_type[max(0, current_inds[i][0]-1):current_inds[i][0]+2,
+                           max(0, current_inds[i][1]-1):current_inds[i][1]+2]:
             new_inds[i][0] = current_inds[i][0]
             new_inds[i][1] = current_inds[i][1]
 
