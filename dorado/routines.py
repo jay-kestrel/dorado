@@ -84,10 +84,10 @@ def steady_plots(particle, num_iter,
         walk_data = particle.run_iteration()
         if save_output:
             # Get current location
-            xi, yi, ti = get_state(walk_data)
+            xi, yi, ti, _ = get_state(walk_data)
             if i == 0:
                 # Initialize figure
-                x0, y0, t0 = get_state(walk_data, 0)
+                x0, y0, t0, _ = get_state(walk_data, 0)
                 fig = plt.figure(dpi=200)
                 ax = fig.add_subplot(111)
                 im = ax.imshow(particle.depth)
@@ -259,9 +259,9 @@ def unsteady_plots(dx, Np_tracer, seed_xloc, seed_yloc, num_steps, timestep,
 
         walk_data = particle.run_iteration(target_time=target_times[i])
 
-        xi, yi, ti = get_state(walk_data)
+        xi, yi, ti, _ = get_state(walk_data)
         if i == 0:
-            x0, y0, t0 = get_state(walk_data, 0)
+            x0, y0, t0, _ = get_state(walk_data, 0)
             # Initialize figure
             fig = plt.figure(dpi=200)
             ax = fig.add_subplot(111)
@@ -346,10 +346,10 @@ def time_plots(particle, num_iter, folder_name=None, verbose=None):
         walk_data = particle.run_iteration()
 
         # collect latest travel times
-        xi, yi, temptimes = get_state(walk_data)
+        xi, yi, temptimes, _ = get_state(walk_data)
 
         if i == 0:
-            x0, y0, t0 = get_state(walk_data, 0)
+            x0, y0, t0, _ = get_state(walk_data, 0)
             # Initialize figure
             fig = plt.figure(dpi=200)
             ax = plt.gca()
@@ -424,9 +424,11 @@ def get_state(walk_data, iteration=-1, verbose=None):
             List containing equivalent of
             walk_data['travel_times'][:][iteration]
             
-        optional_data : `dict of lists`, optional 
+        optional_data : `dict of lists`
             A dictionary of lists of optional outputs for the particle stepper
             containing equivalent of walk_data[var][:][iteration] for each var.
+            Always returned; an empty dict when walk_data tracked no optional
+            variables.
 
 
     """
@@ -468,10 +470,9 @@ def get_state(walk_data, iteration=-1, verbose=None):
         logger.info('Note: %s particles have not reached %s iterations' % \
               (iter_exceeds_warning, iteration))
 
-    if optional_vars:
-        return xinds, yinds, times, optional_data
-    else:
-        return xinds, yinds, times
+    # stable contract: optional_data is always returned (empty when no
+    # optional variables were tracked) so callers can unpack a 4-tuple
+    return xinds, yinds, times, optional_data
 
 def get_time_state(walk_data, target_time, verbose=None):
     """Pull walk_data values nearest to a specific time.
@@ -509,9 +510,11 @@ def get_time_state(walk_data, target_time, verbose=None):
             to input. Times will differ slightly from input time due to
             the nature of the method.
 
-        optional_data : `dict of lists`, optional 
+        optional_data : `dict of lists`
             A dictionary of lists of optional outputs for the particle stepper
             containing equivalent of walk_data[var][:][iteration] for each var.
+            Always returned; an empty dict when walk_data tracked no optional
+            variables.
 
 
     """
@@ -543,10 +546,9 @@ def get_time_state(walk_data, target_time, verbose=None):
             handle_verbose_deprecation(verbose)
             logger.info('Note: Particle '+str(ii)+' never reached target_time')
 
-    if optional_vars:
-        return xinds, yinds, times, optional_data
-    else:
-        return xinds, yinds, times
+    # stable contract: optional_data is always returned (empty when no
+    # optional variables were tracked) so callers can unpack a 4-tuple
+    return xinds, yinds, times, optional_data
 
 
 def plot_exposure_time(walk_data,
@@ -818,7 +820,7 @@ def plot_exposure_time_thresholds(walk_data,
     """
 
     Np_tracer = len(walk_data['xinds'])
-    x, y, end_time = get_state(walk_data)
+    x, y, end_time, _ = get_state(walk_data)
 
     if timedelta == 1:
         timeunit = '[s]'
@@ -1087,9 +1089,9 @@ def plot_state(grid, walk_data, iteration=-1, target_time=None, c='b'):
 
     """
     if target_time is None:
-        x, y, t = get_state(walk_data, int(iteration))
+        x, y, t, _ = get_state(walk_data, int(iteration))
     else:
-        x, y, t = get_time_state(walk_data, target_time)
+        x, y, t, _ = get_time_state(walk_data, target_time)
     ax = plt.gca()
     ax.imshow(grid)
     plt.scatter(y, x, c=c)

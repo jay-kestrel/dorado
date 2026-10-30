@@ -43,7 +43,7 @@ np.random.seed(0)
 particle.generate_particles(Np_tracer, seed_xloc, seed_yloc)
 # run model until all particles have travelled for about 1.5 hours
 walk_data = particle.run_iteration(target_time=2100)
-_, _, finaltimes = get_state(walk_data, iteration=-1)
+_, _, finaltimes, _ = get_state(walk_data, iteration=-1)
 
 plot_state(params.depth, walk_data, iteration=0, c='b')
 plot_state(params.depth, walk_data, iteration=-1, c='r')
