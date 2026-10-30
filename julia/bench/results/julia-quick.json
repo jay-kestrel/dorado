@@ -1,0 +1,53 @@
+{
+  "metadata": {
+    "julia": "1.11.7",
+    "logical_cpus": 8,
+    "machine": "x86_64",
+    "normalization": "attempted particle-steps, including frozen particles",
+    "platform": "x86_64-linux-gnu",
+    "revision": "df863fc13094fd8c7e47d41c370f10871eba6735",
+    "routing_source_sha256": {
+      "npy.jl": "60e4bb1e11b63f715acafa7a4381f267a5ae601efc5b9d3b2a1b3039235a30cd",
+      "particles.jl": "1a6b96ea40b46aa7de6b605589513fdcc637c3c8f4072cf10ddf3a7674d7509a",
+      "state.jl": "a7e05e4d552e120f8bb9ebd6c98b50fd15ec16324ce3e5b80e4761306e8f024f",
+      "walker.jl": "47f25ff49c8e84491daec72a75bab75025e70b5ad0ee8a383b1d8115c2fac3ce",
+      "weights.jl": "88b4f6d204e1f1496785d6e99a70e618c4ebdfe8ef32a3f33605040f685d735f"
+    },
+    "state_reset": "deepcopy staged particles outside timing",
+    "thread_environment": {
+      "JULIA_NUM_THREADS": "1"
+    },
+    "timed_region": "run_iteration only",
+    "timer": "time_ns",
+    "timestamp_utc": "2026-10-30T21:07:00.017",
+    "warmup_iterations": "full route (one untimed pass over the workload's step count)",
+    "warmup_note": "Julia compiles per-specialization; the warmup route covers every specialization the timed region touches",
+    "working_tree_dirty": true
+  },
+  "results": [
+    {
+      "appended_steps": [
+        1500
+      ],
+      "backend": "julia",
+      "dx": 10.0,
+      "median_seconds": 0.000969628,
+      "microseconds_per_particle_step": 0.6464186666666667,
+      "n_threads": 1,
+      "particles": 500,
+      "repeats": 1,
+      "seconds": [
+        0.000969628
+      ],
+      "seed": 0,
+      "shape": [
+        100,
+        100
+      ],
+      "steps": 3,
+      "workload": "anuga"
+    }
+  ],
+  "schema_version": 1,
+  "skipped": []
+}

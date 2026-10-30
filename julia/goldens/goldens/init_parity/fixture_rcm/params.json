@@ -1,0 +1,19 @@
+{
+  "dx": 50.0,
+  "theta": 1.0,
+  "gamma": 0.05,
+  "diff_coeff": 0.2,
+  "dry_depth": 0.1,
+  "steepest_descent": false,
+  "model": "DeltaRCM",
+  "seed": 0,
+  "Np_tracer": 10000,
+  "iterations": 100,
+  "arrays": {
+    "depth": "depth.f64.npy",
+    "stage": "stage.f64.npy",
+    "qx": "qx.f64.npy",
+    "qy": "qy.f64.npy",
+    "cell_type": "cell_type.i64.npy"
+  }
+}

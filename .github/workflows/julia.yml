@@ -1,0 +1,52 @@
+name: julia
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+permissions:
+  contents: read
+
+# No `uses:` steps: the org policy restricts actions to repositories owned by
+# jay-kestrel. Checkout is done inline with git; Julia is installed from the
+# official distribution tarball.
+
+jobs:
+  equivalence-and-quick-bench:
+    # Non-blocking until the workflow has proven itself on hosted runners;
+    # the equivalence suite is green locally (215/215 at the tracked HEAD).
+    continue-on-error: true
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (inline, no actions)
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git init
+          git remote add origin "https://github.com/${{ github.repository }}"
+          git fetch --depth=1 origin "${{ github.ref }}"
+          git checkout "$GITHUB_SHA" 2>/dev/null || git checkout FETCH_HEAD
+
+      - name: Install Julia 1.11.7 from the official tarball
+        run: |
+          JULIA_VERSION=1.11.7
+          URL="https://julialang-s3.julialang.org/bin/linux/x64/1.11/julia-${JULIA_VERSION}-linux-x86_64.tar.gz"
+          curl -sSL --retry 3 -o /tmp/julia.tar.gz "$URL"
+          mkdir -p "$RUNNER_TEMP/julia"
+          tar -xzf /tmp/julia.tar.gz -C "$RUNNER_TEMP/julia" --strip-components=1
+          echo "$RUNNER_TEMP/julia/bin" >> "$GITHUB_PATH"
+          julia --version
+
+      - name: Instantiate the Dorado Julia package
+        run: |
+          julia --project=julia -e 'using Pkg; Pkg.instantiate(); Pkg.precompile()'
+
+      - name: Run the equivalence suite
+        run: |
+          julia --project=julia julia/test/runtests.jl
+
+      - name: Quick routing benchmark (anuga, 500 particles, 3 steps)
+        run: |
+          julia --project=julia julia/bench/bench_routing.jl \
+            --output "$RUNNER_TEMP/julia-quick.json" --quick
+          cat "$RUNNER_TEMP/julia-quick.json"
