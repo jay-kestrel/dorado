@@ -1,0 +1,33 @@
+# This workflow builds the C port (c/) and runs its CTest suite.
+#
+# Repository Actions policy only allows actions from repositories owned by
+# jay-kestrel, so actions/checkout and similar external actions are denied
+# (see the header comment in build.yml). A shell fetch of the PR merge ref
+# and plain shell steps do the job here. The C port has zero external
+# dependencies, so no package installation is needed: ubuntu-latest runners
+# ship gcc/clang and CMake.
+
+name: c-port
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  ctest:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Check out source (shell fetch; external actions are blocked by repo policy)
+      env:
+        REF: ${{ github.event_name == 'pull_request' && format('refs/pull/{0}/merge', github.event.number) || github.ref }}
+      run: |
+        git config --global --add safe.directory "$GITHUB_WORKSPACE"
+        git init -q "$GITHUB_WORKSPACE"
+        git fetch -q --depth=1 "https://github.com/${{ github.repository }}.git" "$REF"
+        git checkout -q --detach FETCH_HEAD
+    - name: Configure (CMake, Release, warnings as errors)
+      run: cmake -S c -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_FLAGS=-Werror
+    - name: Build
+      run: cmake --build build
+    - name: Test (ctest)
+      run: cd build && ctest --output-on-failure
