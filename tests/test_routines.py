@@ -61,6 +61,12 @@ def test_get_state_contract_is_always_4_tuple():
         _walk_data(optional_var='depth'))
     assert 'depth' in optional_data
 
+    # get_time_state shares the stable 4-tuple contract on base walk_data
+    # (no optional variables tracked): the optional dict is always present
+    tstate = routines.get_time_state(_walk_data(), 10)
+    assert len(tstate) == 4
+    assert tstate[3] == {}
+
 
 def test_plot_exposure_time_runs_on_default_and_optional_walk_data():
     """BUG-2: plot_exposure_time crashed with a 3-value unpack error on
