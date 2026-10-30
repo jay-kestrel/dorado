@@ -28,7 +28,6 @@ dependencies = [
 	"numpy",
     "matplotlib",
     "scipy",
-    "future",
     "tqdm"
 ]
 
@@ -63,3 +62,7 @@ packages = ["dorado", "dorado.example_data"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
+
+[tool.ruff.lint]
+# minimal bug-hunter set for a legacy codebase; broaden incrementally
+select = ["E9", "F63", "F7", "F82"]
