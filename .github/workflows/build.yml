@@ -95,6 +95,25 @@ jobs:
         python unsteady_example.py
 
 
+  conda:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        persist-credentials: false
+    - name: Setup conda
+      uses: conda-incubator/setup-miniconda@v3
+      with:
+        miniforge-version: latest
+        python-version: "3.12"
+    - name: Install conda-build
+      shell: bash -el {0}
+      run: conda install -y conda-build
+    - name: Build conda recipe
+      shell: bash -el {0}
+      run: conda-build -c conda-forge conda/
+
+
   docs:
     runs-on: ubuntu-latest
     steps:
