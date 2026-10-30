@@ -79,7 +79,9 @@ def steady_plots(particle, num_iter,
             os.makedirs(folder_name+os.sep+'data')
 
     # Iterate and save results
-    walk_data = None  # stays None when num_iter is 0
+    # bind walk_data before the loop so a num_iter=0 run returns the
+    # seeded (unchanged) walk data instead of raising UnboundLocalError
+    walk_data = particle.walk_data
     for i in tqdm(list(range(0, num_iter)), ascii=True):
         # Do particle iterations
         walk_data = particle.run_iteration()
