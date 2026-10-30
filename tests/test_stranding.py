@@ -130,11 +130,13 @@ def test_rest_release():
 def test_probability_release():
     # per-step Bernoulli re-entrainment: exact against the replicated
     # draws under a fixed seed, and ensemble fraction ~ entrain_prob
+    # (pinned to the python reference: the expected flags replicate the
+    # legacy np.random draw sequence, which the native streams do not)
     N = 2000
     depth, cell_type = dry_center_domain()
     dry_phase = particle_track.Particles(
         make_params(depth, cell_type, stranding_release='probability',
-                    entrain_prob=0.25))
+                    entrain_prob=0.25), backend='python')
     dry_phase.generate_particles(N, [2] * N, [2] * N, method='exact')
     for _ in range(2):
         dry_phase.run_iteration()
@@ -143,7 +145,7 @@ def test_probability_release():
 
     wet_phase = particle_track.Particles(
         make_params(np.ones((21, 21)), stranding_release='probability',
-                    entrain_prob=0.25))
+                    entrain_prob=0.25), backend='python')
     wet_phase.generate_particles(0, [], [],
                                  previous_walk_data=dry_phase.walk_data)
     np.random.seed(42)
