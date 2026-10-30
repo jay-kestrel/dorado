@@ -64,12 +64,16 @@ def steady_plots(particle, num_iter,
         ('human-readable') text file.
 
     """
+    # Deprecation bridge hoisted to entry scope: at most one call per
+    # public routine invocation, evaluated only when verbose is not None
+    if verbose is not None:
+        handle_verbose_deprecation(verbose)
+
     # make directory to save the data
     if save_output:
         if folder_name is None:
             folder_name = os.getcwd()
         if os.path.exists(folder_name):
-            handle_verbose_deprecation(verbose)
             logger.info('Saving files in existing directory')
         else:
             os.makedirs(folder_name)
@@ -182,6 +186,11 @@ def unsteady_plots(dx, Np_tracer, seed_xloc, seed_yloc, num_steps, timestep,
         and travel times as a json text file.
 
     """
+    # Deprecation bridge hoisted to entry scope: at most one call per
+    # public routine invocation, evaluated only when verbose is not None
+    if verbose is not None:
+        handle_verbose_deprecation(verbose)
+
     # init params
     params = modelParams()
     params.dx = dx
@@ -189,7 +198,6 @@ def unsteady_plots(dx, Np_tracer, seed_xloc, seed_yloc, num_steps, timestep,
     if folder_name is None:
         folder_name = os.getcwd()
     if os.path.exists(folder_name):
-        handle_verbose_deprecation(verbose)
         logger.info('Saving files in existing directory')
     else:
         os.makedirs(folder_name)
@@ -233,7 +241,6 @@ def unsteady_plots(dx, Np_tracer, seed_xloc, seed_yloc, num_steps, timestep,
                 '; every variable read for output_type=' +
                 repr(output_type) + ' needs at least num_steps=' +
                 str(num_steps) + ' files')
-        handle_verbose_deprecation(verbose)
         logger.warning('num_steps exceeds number of model outputs in'
                        ' output_base')
         logger.warning('Setting num_steps to equal number of model outputs')
@@ -353,11 +360,15 @@ def time_plots(particle, num_iter, folder_name=None, verbose=None):
         Saves plots and data for each iteration
 
     """
+    # Deprecation bridge hoisted to entry scope: at most one call per
+    # public routine invocation, evaluated only when verbose is not None
+    if verbose is not None:
+        handle_verbose_deprecation(verbose)
+
     # make directory to save the data
     if folder_name is None:
         folder_name = os.getcwd()
     if os.path.exists(folder_name):
-        handle_verbose_deprecation(verbose)
         logger.info('Saving files in existing directory')
     else:
         os.makedirs(folder_name)
@@ -461,6 +472,12 @@ def get_state(walk_data, iteration=-1, verbose=None):
 
     """
     iteration = int(iteration)
+
+    # Deprecation bridge hoisted to entry scope: at most one call per
+    # public routine invocation, evaluated only when verbose is not None
+    if verbose is not None:
+        handle_verbose_deprecation(verbose)
+
     Np_tracer = len(walk_data['xinds'])  # Number of particles
 
     xinds = []
@@ -494,7 +511,6 @@ def get_state(walk_data, iteration=-1, verbose=None):
             iter_exceeds_warning += 1
 
     if iter_exceeds_warning > 0:
-        handle_verbose_deprecation(verbose)
         logger.info('Note: %s particles have not reached %s iterations' % \
               (iter_exceeds_warning, iteration))
 
@@ -546,6 +562,11 @@ def get_time_state(walk_data, target_time, verbose=None):
 
 
     """
+    # Deprecation bridge hoisted to entry scope: at most one call per
+    # public routine invocation, evaluated only when verbose is not None
+    if verbose is not None:
+        handle_verbose_deprecation(verbose)
+
     Np_tracer = len(walk_data['xinds'])  # Number of particles
 
     xinds = []
@@ -571,7 +592,6 @@ def get_time_state(walk_data, target_time, verbose=None):
         for var in optional_vars:
             optional_data[var].append(walk_data[var][ii][tt])
         if times_ii[-1] < target_time:
-            handle_verbose_deprecation(verbose)
             logger.info('Note: Particle '+str(ii)+' never reached target_time')
 
     # stable contract: optional_data is always returned (empty when no
@@ -641,7 +661,13 @@ def plot_exposure_time(walk_data,
         and differential forms of the ETD as a png and the list of exposure
         times as a json ('human-readable') text file.
     """
+    # Deprecation bridge hoisted to entry scope: at most one call per
+    # public routine invocation, evaluated only when verbose is not None
+    if verbose is not None:
+        handle_verbose_deprecation(verbose)
+
     # Initialize arrays to record exposure time of each particle
+
     Np_tracer = len(walk_data['xinds'])  # Number of particles
     # Record final travel times
     x, y, end_time, optional_state = get_state(walk_data)
@@ -663,7 +689,6 @@ def plot_exposure_time(walk_data,
         if folder_name is None:
             folder_name = os.getcwd()
         if os.path.exists(folder_name):
-            handle_verbose_deprecation(verbose)
             logger.info('Saving files in existing directory')
         else:
             os.makedirs(folder_name)
@@ -750,10 +775,8 @@ def plot_exposure_time(walk_data,
                 k = int(np.searchsorted(frac_exited, lv, side='left'))  # first index where CDF >= lv
                 k = max(0, min(k, len(full_time_vect) - 1))
                 etime = full_time_vect[k] / timedelta  # same units as x-axis (days if timedelta=86400)
-                handle_verbose_deprecation(verbose)
                 logger.info(f"E{int(lv*100)}: {etime:.3g} {timeunit}")
             else:
-                handle_verbose_deprecation(verbose)
                 logger.info(f"E{int(lv*100)}: not reached (max F={max_total:.3f})")
 
         right_ax = ax.twinx()
@@ -847,6 +870,11 @@ def plot_exposure_time_thresholds(walk_data,
         times as a json ('human-readable') text file.
     """
 
+    # Deprecation bridge hoisted to entry scope: at most one call per
+    # public routine invocation, evaluated only when verbose is not None
+    if verbose is not None:
+        handle_verbose_deprecation(verbose)
+
     Np_tracer = len(walk_data['xinds'])
     x, y, end_time, _ = get_state(walk_data)
 
@@ -905,7 +933,6 @@ def plot_exposure_time_thresholds(walk_data,
     # Clamp the CDF lookup so a percentile that the CDF never reaches
     # (short runs, small ROIs) is reported as 'not reached' instead of
     # reading past the end of the smoothed time vector
-    handle_verbose_deprecation(verbose)
     for lv in (0.50, 0.75, 0.90):
         idx = int(np.searchsorted(smooth_CDF, lv))
         if idx >= len(smooth_time_vect):
@@ -1196,11 +1223,16 @@ def snake_plots(grid,
     import matplotlib.patheffects as path_effects
     from matplotlib.collections import LineCollection
 
+    # Deprecation bridge hoisted to entry scope: at most one call per
+    # public routine invocation, evaluated only when verbose is not None
+    if verbose is not None:
+        handle_verbose_deprecation(verbose)
+
+
     # Handle directories
     if folder_name is None:
         folder_name = os.getcwd()
     if os.path.exists(folder_name):
-        handle_verbose_deprecation(verbose)
         logger.info('Saving files in existing directory')
     else:
         os.makedirs(folder_name)
