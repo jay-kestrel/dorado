@@ -874,18 +874,18 @@ def plot_exposure_time_thresholds(walk_data,
     ax1.set_ylim([0, 1])
 
     # Percentile markers
-    E50_idx = np.searchsorted(smooth_CDF, 0.50)
-    E75_idx = np.searchsorted(smooth_CDF, 0.75)
-    E90_idx = np.searchsorted(smooth_CDF, 0.90)
-
-    E50_time = int(smooth_time_vect[E50_idx] / timedelta)
-    E75_time = int(smooth_time_vect[E75_idx] / timedelta)
-    E90_time = int(smooth_time_vect[E90_idx] / timedelta)
-
+    # Clamp the CDF lookup so a percentile that the CDF never reaches
+    # (short runs, small ROIs) is reported as 'not reached' instead of
+    # reading past the end of the smoothed time vector
     handle_verbose_deprecation(verbose)
-    logger.info(f'E50: {E50_time} {timeunit}')
-    logger.info(f'E75: {E75_time} {timeunit}')
-    logger.info(f'E90: {E90_time} {timeunit}')
+    for lv in (0.50, 0.75, 0.90):
+        idx = int(np.searchsorted(smooth_CDF, lv))
+        if idx >= len(smooth_time_vect):
+            logger.info(f'E{int(lv*100)}: not reached '
+                        f'(max F={smooth_CDF[-1]:.3f})')
+        else:
+            logger.info(f'E{int(lv*100)}: '
+                        f'{int(smooth_time_vect[idx] / timedelta)} {timeunit}')
 
     for yval in [0.5, 0.75, 0.90]:
         ax1.axhline(y=yval, color='gray', linestyle='--', linewidth=0.75)
