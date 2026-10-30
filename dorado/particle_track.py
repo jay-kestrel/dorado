@@ -260,8 +260,18 @@ class Particles():
         self.velocity = np.sqrt(self.u**2+self.v**2)
         # cannot have 0/nans - leads to infinite/nantravel times
         self.velocity[self.velocity < 1e-8] = 1e-8
-        self.u[np.abs(self.u) < 1e-8] = 1e-8
-        self.v[np.abs(self.v) < 1e-8] = 1e-8
+        # floor tiny velocities to avoid 0/nans, preserving the sign of
+        # tiny negative values so that the velocity angle keeps pointing
+        # along the flow direction (exact zeros keep the historical
+        # positive floor)
+        tiny_u = np.abs(self.u) < 1e-8
+        self.u = np.where(tiny_u,
+                          (np.sign(self.u) + (self.u == 0.0))*1e-8,
+                          self.u)
+        tiny_v = np.abs(self.v) < 1e-8
+        self.v = np.where(tiny_v,
+                          (np.sign(self.v) + (self.v == 0.0))*1e-8,
+                          self.v)
         # Compute velocity orientation at each cell
         self.velocity_angle = np.arctan2(-1.0*self.u, self.v)
 
@@ -314,16 +324,19 @@ class Particles():
                 self.diff_coeff = 0.2
 
         # Minimum depth for cell to be considered wet
-        try:
+        if getattr(params, 'dry_depth', None) is not None:
             self.dry_depth = params.dry_depth
-        except Exception:
+        else:
             logger.info("minimum depth for wetness not defined - using 10 cm")
             self.dry_depth = 0.1
 
         # Cell types: 2 = land, 1 = channel, 0 = ocean, -1 = edge
-        try:
+        # (guard on None -- a None value does not raise on attribute
+        # access, so try/except would let it slip through and crash later
+        # in the weight calculations)
+        if getattr(params, 'cell_type', None) is not None:
             self.cell_type = params.cell_type
-        except Exception:
+        else:
             logger.info("Cell Types not specified - Estimating from depth")
             self.cell_type = np.zeros_like(self.depth, dtype='int')
             self.cell_type[self.depth < self.dry_depth] = 2
@@ -349,55 +362,61 @@ class Particles():
         sqrt2 = np.sqrt(2)
         sqrt05 = np.sqrt(0.5)
 
-        # Define distances between cells in D8 sense
-        try:
+        # Define distances between cells in D8 sense (guard on None --
+        # a None value does not raise on attribute access)
+        if getattr(params, 'distances', None) is not None:
             self.distances = params.distances
-        except Exception:
+        else:
             # defined if not given
             self.distances = np.array([[sqrt2, 1, sqrt2],
                                        [1, 1, 1],
                                        [sqrt2, 1, sqrt2]])
 
-        # D8 components of x-unit vector
-        try:
+        # D8 components of x-unit vector (guard on None -- a None value
+        # does not raise on attribute access)
+        if getattr(params, 'ivec', None) is not None:
             self.ivec = params.ivec
-        except Exception:
+        else:
             # defined if not given
             self.ivec = np.array([[-sqrt05, 0, sqrt05],
                                   [-1, 0, 1],
                                   [-sqrt05, 0, sqrt05]])
 
-        # D8 components of y-unit vector
-        try:
+        # D8 components of y-unit vector (guard on None -- a None value
+        # does not raise on attribute access)
+        if getattr(params, 'jvec', None) is not None:
             self.jvec = params.jvec
-        except Exception:
+        else:
             # defined if not given
             self.jvec = np.array([[-sqrt05, -1, -sqrt05],
                                   [0, 0, 0],
                                   [sqrt05, 1, sqrt05]])
 
-        # Positive/Negative x-directions
-        try:
+        # Positive/Negative x-directions (guard on None -- a None value
+        # does not raise on attribute access)
+        if getattr(params, 'iwalk', None) is not None:
             self.iwalk = params.iwalk
-        except Exception:
+        else:
             # defined if not given
             self.iwalk = np.array([[-1, 0, 1],
                                    [-1, 0, 1],
                                    [-1, 0, 1]])
 
-        # Positive/Negative y-directions
-        try:
+        # Positive/Negative y-directions (guard on None -- a None value
+        # does not raise on attribute access)
+        if getattr(params, 'jwalk', None) is not None:
             self.jwalk = params.jwalk
-        except Exception:
+        else:
             # defined if not given
             self.jwalk = np.array([[-1, -1, -1],
                                    [0, 0, 0],
                                    [1, 1, 1]])
 
-        # Angles of D8 step directions
-        try:
+        # Angles of D8 step directions (guard on None -- a None value
+        # does not raise on attribute access)
+        if getattr(params, 'angles', None) is not None:
             self.angles = params.angles
-        except Exception:
+        else:
             # defined if not given
             self.angles = np.array([[3*pi/4, pi/2, pi/4],
                                     [pi, 0, 0],
@@ -750,6 +769,11 @@ class Particles():
         else:
             # If we ARE aiming for a specific time
             # iterate each particle until we get there
+            # init list for particles that exceed the max number of
+            # iterations before reaching the target time (initialized
+            # once for all particles, not re-initialized per particle)
+            _iter_particles = []
+
             # Loop through all particles
             for ii in list(range(self.Np_tracer)):
                 if len(all_times[ii]) > 1:
@@ -758,9 +782,6 @@ class Particles():
                     # Initialize a guess for the next iteration's timestep
                     est_next_dt = 0.1
                 count = 1
-
-                # init list for too many particle iterations
-                _iter_particles = []
 
                 # Only iterate if this particle isn't already at a boundary:
                 # (lower slice bounds clamped at 0 as in check_for_boundary)

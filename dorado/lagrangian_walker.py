@@ -30,7 +30,8 @@ def random_pick_seed(choices, probs=None):
 
     """
     # randomly pick tracer drop cell to use given a list of potential spots
-    if not probs:
+    # (guard on None -- `not probs` is ambiguous for ndarray probs)
+    if probs is None:
         probs = np.array([1 for i in list(range(len(choices)))])
     # find the corresp. index value from input 'choices' list of indices
     cutoffs = np.cumsum(probs)
@@ -532,7 +533,12 @@ def particle_stepper(Particles, current_inds, travel_times, start_optional):
                     new_cells))
     # put new indices into array
     new_inds = np.array(new_inds, dtype=np.int32)
-    new_inds[np.array(dist) == 0] = 0
+    # particles whose picked step distance is 0 did not move: keep them at
+    # their current indices instead of overwriting them with the (0, 0)
+    # sentinel, which collides with a real cell at the top-left corner
+    # when a user-supplied distances array contains a 0
+    zero_dist = np.array(dist) == 0
+    new_inds[zero_dist] = np.array(inds, dtype=np.int32)[zero_dist]
     # see if the indices are at boundaries
     new_inds = check_for_boundary(new_inds, inds, Particles.cell_type)
     # transform from np array to list
