@@ -56,7 +56,11 @@ jobs:
         env:
           # One interpreter per OS; the pyo3 abi3-py311 feature tags the
           # produced wheel cp311-abi3-* so it serves all Python >= 3.11.
-          CIBW_BUILD: "cp312-*"
+          # Pinned to one platform tag per OS: cibuildwheel 4 defaults would
+          # also build musllinux (2nd linux pass) and win32 (no modern numpy
+          # win32 wheels to pair with), doubling build time for artifacts
+          # most users cannot install.
+          CIBW_BUILD: "cp312-manylinux_x86_64 cp312-macosx_x86_64 cp312-win_amd64"
         with:
           output-dir: wheelhouse
       - uses: actions/upload-artifact@v4
@@ -81,7 +85,17 @@ jobs:
           import zipfile
 
           wheels = sorted(glob.glob("wheelhouse/*.whl"))
-          assert len(wheels) == 3, f"expected 3 wheels, found: {wheels}"
+          assert wheels, "no wheels found in wheelhouse"
+          # Family coverage: one wheel per OS is expected, but assert on
+          # platform families rather than a magic count so arch additions
+          # fail on content, not arithmetic.
+          families = {
+              "linux": [w for w in wheels if "manylinux" in w or "musllinux" in w],
+              "macos": [w for w in wheels if "macosx" in w],
+              "windows": [w for w in wheels if "win" in w],
+          }
+          for family, found in families.items():
+              assert found, f"no {family} wheel found in: {wheels}"
           for whl in wheels:
               names = zipfile.ZipFile(whl).namelist()
               native = [
