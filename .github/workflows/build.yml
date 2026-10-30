@@ -260,3 +260,24 @@ jobs:
         git add -A
         git commit -qm "docs: deploy HTML from commit ${GITHUB_SHA}"
         git push -q -f "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git" gh-pages
+
+  ctest:
+    # C port (c/): standalone C11 + CMake, zero external dependencies, so no
+    # package installation is needed. Kept as its own job so the Python
+    # matrix and the native CTest suite fail independently.
+    runs-on: ubuntu-latest
+    steps:
+    - name: Check out source (shell fetch; external actions are blocked by repo policy)
+      env:
+        REF: ${{ github.event_name == 'pull_request' && format('refs/pull/{0}/merge', github.event.number) || github.ref }}
+      run: |
+        git config --global --add safe.directory "$GITHUB_WORKSPACE"
+        git init -q "$GITHUB_WORKSPACE"
+        git fetch -q --depth=1 "https://github.com/${{ github.repository }}.git" "$REF"
+        git checkout -q --detach FETCH_HEAD
+    - name: Configure (CMake, Release, warnings as errors)
+      run: cmake -S c -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_FLAGS=-Werror
+    - name: Build
+      run: cmake --build build
+    - name: Test (ctest)
+      run: cd build && ctest --output-on-failure
