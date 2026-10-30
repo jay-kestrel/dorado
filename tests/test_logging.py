@@ -1,5 +1,6 @@
 import importlib
 import logging
+import warnings
 
 import pytest
 
@@ -140,3 +141,48 @@ def test_configure_from_env_re_reads_variable(monkeypatch, clean_logger):
     logging_config.configure_from_env()
     assert logging_config.logger.level == logging.ERROR
     assert len(logging_config.logger.handlers) == 1
+
+
+def test_negative_diff_coeff_logs_warning(caplog):
+    # misconfiguration notices are logger warnings, not warnings.warn
+    import numpy as np
+    from dorado import particle_track
+
+    class MinimalParams:
+        pass
+
+    p = MinimalParams()
+    p.dx = 1
+    p.depth = np.ones((3, 3))
+    p.stage = np.ones((3, 3))
+    p.qx = np.zeros((3, 3))
+    p.qy = np.ones((3, 3))
+    p.diff_coeff = -1.0
+
+    with caplog.at_level(logging.WARNING, logger="dorado"):
+        particle_track.Particles(p)
+
+    assert any(
+        record.levelno == logging.WARNING
+        and "Specified diffusion coefficient is negative" in record.getMessage()
+        for record in caplog.records
+    )
+
+
+def test_deprecation_warning_fires_once_per_public_call():
+    # verbose routed through the bridge: exactly one DeprecationWarning per call
+    from dorado import routines
+
+    walk_data = {'x': [], 'y': []}
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        try:
+            routines.time_plots(walk_data, 1, verbose=True)
+        except Exception:
+            pass  # only the warning contract is under test here
+    deprecations = [
+        w for w in caught
+        if issubclass(w.category, DeprecationWarning)
+        and "The 'verbose' parameter is deprecated" in str(w.message)
+    ]
+    assert len(deprecations) == 1

@@ -9,7 +9,6 @@ through the domain.
 Project Homepage: https://github.com/passaH2O/dorado
 """
 from __future__ import division, print_function, absolute_import
-import warnings
 from builtins import range
 from math import pi
 import numpy as np
@@ -161,7 +160,6 @@ class modelParams:
         self.qy = None
         self.u = None
         self.v = None
-        self.verbose = None
 
 
 def check_stranding_params(params):
@@ -265,11 +263,8 @@ class Particles():
         possible/sensible
 
         """
-        # pass verbose (deprecated - use dorado.setup_logging() instead)
-        if getattr(params, 'verbose', None) is None:
-            self.verbose = True  # set verbosity on if None or missing
-        else:
-            self.verbose = params.verbose
+        # verbose on params is deprecated - use dorado.setup_logging() instead
+        if getattr(params, 'verbose', None) is not None:
             handle_verbose_deprecation(params.verbose)
 
         # REQUIRED PARAMETERS #
@@ -430,14 +425,12 @@ class Particles():
         try:
             diff_coeff = params.diff_coeff
             if diff_coeff < 0:
-                if self.verbose:
-                    warnings.warn("Specified diffusion coefficient is negative"
-                                  ". Rounding up to zero")
+                logger.warning("Specified diffusion coefficient is negative"
+                               ". Rounding up to zero")
                 diff_coeff = 0.0
             elif diff_coeff >= 2:
-                if self.verbose:
-                    warnings.warn("Diffusion behaves non-physically when"
-                                  " coefficient >= 2")
+                logger.warning("Diffusion behaves non-physically when"
+                               " coefficient >= 2")
             self.diff_coeff = float(diff_coeff)
         except Exception:
             if getattr(params, 'steepest_descent', False) is True:
@@ -755,9 +748,9 @@ class Particles():
         base_vars = self.base_walk_variables
 
         # initialize new travel times list
-        if (seed_time != 0) and (self.verbose is True):
-            warnings.warn("Particle seed time is nonzero,"
-                          " be aware when post-processing.")
+        if seed_time != 0:
+            logger.warning("Particle seed time is nonzero,"
+                           " be aware when post-processing.")
         new_start_times = [seed_time]*Np_tracer
 
         if method == 'random':
@@ -1105,12 +1098,13 @@ class Particles():
                 all_walk_data[var] = optional_vars[var]
             
             # write out warning if particles exceed step limit
-            if (len(_iter_particles) > 0) and (self.verbose is True):
-                warnings.warn(str(len(_iter_particles)) + " Particles"
-                              " exceeded iteration limit before reaching the"
-                              " target time, consider using a smaller"
-                              " time-step. Particles are: " +
-                              str(_iter_particles))
+            if len(_iter_particles) > 0:
+                logger.warning("%d particles"
+                               " exceeded iteration limit before reaching the"
+                               " target time, consider using a smaller"
+                               " time-step. Particles are: %s",
+                               len(_iter_particles), _iter_particles)
+
 
             # re-write the walk_data attribute of self
             self.walk_data = all_walk_data
