@@ -85,6 +85,12 @@ All six values are within twice the approximately 12 microseconds/step in the
 2026-10-30 research findings (`art_jiwouHPN`, section 8). The full provenance is
 in the JSON; these measurements use Python 3.13.14 and NumPy 2.3.5.
 
+`results/python-numpy.json` records the full default command on 2026-10-30
+at harness commit `a49ff18`. Python/NumPy appended-step counts match in all six
+cases. On ANUGA with 2,500 particles, the medians are 1.553572 s / 0.175990 s
+(8.83x for NumPy); Rust is explicitly skipped. The dirty flag here comes from
+untracked test-generated `figs/`, not source changes.
+
 The later native gate is at least 10x single-thread speedup on ANUGA with 2,500
 particles, using a same-machine reference rerun. If NumPy is within 20% of native,
 the approved spec requires revisiting the toolchain decision. Neither native
