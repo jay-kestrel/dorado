@@ -427,6 +427,8 @@ def random_pick(probs):
             1-8 value chosen randomly based on the weighted probabilities
 
     """
+    # work on a copy so the shared weight array is not modified in place
+    probs = probs.copy()
     probs[np.isnan(probs)] = 0  # any nans are assigned as 0
     cutoffs = np.cumsum(probs)  # cumulative sum of all probabilities
     # randomly pick indices from cutoffs based on uniform distribution
@@ -439,7 +441,11 @@ def steep_descent(probs):
     """Choose value with greatest probability, no longer random.
 
     Pick the array value with the greatest probability, no longer a
-    stochastic process, instead just choosing the steepest descent
+    stochastic process, instead just choosing the steepest descent.
+    The current location (index 4) is excluded from consideration, and
+    the maximum is computed after that exclusion; if no neighboring
+    cell carries any weight (a dead end), the current location
+    (index 4) is returned. The input array is copied and not modified.
 
     **Inputs** :
 
@@ -453,13 +459,19 @@ def steep_descent(probs):
             1-8 value chosen by greatest probs
 
     """
-    max_val = np.nanmax(probs)
-    # remove initial location (index 4) from consideration
-    probs[4] = 0
-    # remove any locations from consideration beneath max value
-    probs[probs < max_val] = 0
+    # work on a copy so the shared weight array is not modified in place
+    probs = probs.copy()
     # any nans become ignored too
     probs[np.isnan(probs)] = 0
+    # remove initial location (index 4) from consideration
+    probs[4] = 0
+    # dead end: no neighbor carries any weight, so stay at the current
+    # cell rather than drifting to the first (NW) slot
+    if not np.any(probs > 0):
+        return 4
+    # remove any locations from consideration beneath max value
+    max_val = np.nanmax(probs)
+    probs[probs < max_val] = 0
 
     # will pick either the index corresponding to the max value if there
     # is just 1, or it will randomly choose between values in the event
