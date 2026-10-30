@@ -96,11 +96,51 @@ particles, using a same-machine reference rerun. If NumPy is within 20% of nativ
 the approved spec requires revisiting the toolchain decision. Neither native
 gate can be evaluated by this pre-port PR.
 
+## Normalized fixtures (bench/)
+
+`python benchmarks/normalize_fixtures.py` converts the bundled npz archives
+into the uncompressed `.npy` arrays and flat `params.json` manifests that the
+C and Rust ports consume: `bench/fixture_rcm/` (120 x 240 DeltaRCM field) and
+`bench/fixture_anuga/` (100 x 100 ANUGA field, NaN depths preserved). Arrays
+are cast to the dtype the reference computes in (`<name>.f64.npy`), plus the
+init-estimated `cell_type.i64.npy`; manifest scalars follow the parameter set
+that reproduces the seeded goldens in `tests/test_examplecases.py` (`dx`
+50 m/10 m, `theta` 1.0, `gamma` 0.05, `diff_coeff` 0.2, `dry_depth` 0.1). The
+DeltaRCM field has no discharge arrays, so its zero `qx`/`qy` are baked in.
+Two runs produce byte-identical files (JSON is written as raw bytes, no
+platform newline translation), and a test keeps the committed bytes equal to a
+fresh normalization. Default workload in each manifest: seed 0, 10,000
+particles, 100 iterations.
+
+## Reference runner
+
+`benchmarks/run_reference.py` runs the unchanged Python routing stack on one
+fixture directory and writes `walk_data.json` (the reference output the native
+binaries must reproduce from the same bytes) and `timing.json` (seed, workload,
+and environment provenance) to `bench/out/python/` by default:
+
+```sh
+python benchmarks/run_reference.py --input bench/fixture_rcm/ --particles 10000 \
+    --iterations 100 --seed 0 --out bench/out/python/
+```
+
+`--particles`, `--iterations`, and `--seed` default to the manifest values;
+`--seed-x/--seed-y` default to the `define_params.py` seeding regions per
+field. The timed region covers `Particles` init (velocity/cell-type/D8/weight
+derivation), `generate_particles`, and the `run_iteration` loop; npy/params
+loading and JSON writing are excluded, matching the port binaries' contract.
+Single runs of the default workload on 2026-10-30 (sandbox, Python 3.13.14):
+DeltaRCM 18.37 s / 979,519 appended steps; ANUGA 17.82 s / 1,000,000 appended
+steps. The seeded golden gate (one particle at x=16, y=140, 3 iterations)
+reproduces the `tests/test_examplecases.py` travel times to rel=1e-6; the
+tiny gap to the exact printed values is the fixture's float64 cast, not drift.
+
 ## Local checks
 
 ```sh
 pytest -q
-ruff check --isolated --select E4,E7,E9,F,I,UP --target-version py311 benchmarks tests/test_bench_routing.py
+ruff check --isolated --select E4,E7,E9,F,I,UP --target-version py311 benchmarks \
+    tests/test_bench_routing.py tests/test_benchmark_fixtures.py tests/test_benchmark_reference.py
 ```
 
 This is backend-only benchmarking and CI work: no rendered UI, visual state, or

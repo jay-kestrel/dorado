@@ -67,3 +67,6 @@ target/
 
 # uv
 uv.lock
+
+# Benchmark run outputs (normalized fixtures under bench/ are committed)
+bench/out/
