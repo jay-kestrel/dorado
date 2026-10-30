@@ -744,13 +744,182 @@ def test_verbose_seed_time_warning():
         assert not any("Particle seed time is nonzero" in str(warn.message) for warn in w)
 
 def test_verbose_run_iteration_warning():
-    import warnings
-    params.diff_coeff = 0.0
+    """A particle that exceeds the iteration limit before reaching the
+    target time must trip the warning, whatever its position in the
+    per-particle iteration order."""
+    params = particle_track.modelParams()
+    params.dx = 1.
+    params.model = 'DeltaRCM'
+    params.depth = np.ones((60, 60))
+    params.stage = np.ones((60, 60))
+    params.qx = 1e9 * np.ones((60, 60))  # fast flow: tiny per-step times
+    # moderate-flow column: velocity ~5, so particle 1 takes ~0.2 s per
+    # step and reaches the 0.3 s target cleanly within max_iter
+    params.qx[:, 35] = 5.0
+    params.qy = np.zeros((60, 60))
     params.verbose = True
-    pt = particle_track.Particles(params)
-    pt.generate_particles(1, [1], [1], seed_time=0)
-    # Give a very small target_time so that iteration limit is exceeded if we just give 0 iterations
-    # Wait, run_iteration doesn't exceed easily unless we mock it or set small step limit
-    # We can just manually call the private or just verify if possible
-    # Let's just test that the method runs when verbose=False and we don't need to trigger the warning if it's hard, but we can try
-    pass
+    particle = particle_track.Particles(params)
+    np.random.seed(0)
+    # 'exact' pairs the x and y seed lists positionally ('random' would
+    # pair them independently): particle 0 travels in the fast flow and
+    # cannot reach the target time within max_iter; particle 1 sits in
+    # the moderate column and finishes cleanly after it -- pre-fix, its
+    # per-particle re-initialization of _iter_particles erased particle
+    # 0's capped entry and the warning never fired
+    particle.generate_particles(2, [2, 2], [30, 35], method='exact')
+    with pytest.warns(Warning, match='exceeded iteration limit'):
+        particle.run_iteration(target_time=0.3, max_iter=20)
+
+
+# --- regression tests for confirmed routing bugs ---
+
+def test_seed_on_row0_stays_in_domain():
+    """Particles seeded on row 0 must not wrap to negative indices."""
+    params = particle_track.modelParams()
+    params.dx = 1.
+    params.model = 'DeltaRCM'
+    params.depth = np.ones((5, 5))
+    params.stage = np.ones((5, 5))
+    params.qx = np.zeros((5, 5))
+    params.qy = np.ones((5, 5))
+    particle = particle_track.Particles(params)
+    np.random.seed(0)
+    particle.generate_particles(1, [0], [2])
+    walk_data = particle.run_iteration()
+    assert min(walk_data['xinds'][0]) >= 0
+    assert max(walk_data['xinds'][0]) < params.depth.shape[0]
+
+
+def test_generate_particles_rejects_out_of_bounds_seeds():
+    """Out-of-domain seed indices must raise instead of wrapping."""
+    params = particle_track.modelParams()
+    params.dx = 1.
+    params.model = 'DeltaRCM'
+    params.depth = np.ones((5, 5))
+    params.stage = np.ones((5, 5))
+    params.qx = np.zeros((5, 5))
+    params.qy = np.ones((5, 5))
+    particle = particle_track.Particles(params)
+    with pytest.raises(ValueError, match='[Ss]eed location'):
+        particle.generate_particles(1, [7], [2])
+    with pytest.raises(ValueError, match='[Ss]eed location'):
+        particle.generate_particles(1, [2], [-1])
+
+
+def test_params_arrays_not_mutated():
+    """Particles() must not modify the caller's params arrays."""
+    params = particle_track.modelParams()
+    params.dx = 1.
+    params.model = 'DeltaRCM'
+    params.depth = np.ones((5, 5))
+    params.depth[0, 0] = np.nan
+    params.stage = np.ones((5, 5))
+    params.qx = np.zeros((5, 5))
+    params.qy = np.ones((5, 5))
+    depth_snapshot = params.depth.copy()
+    stage_snapshot = params.stage.copy()
+    qx_snapshot = params.qx.copy()
+    qy_snapshot = params.qy.copy()
+
+    particle = particle_track.Particles(params)
+
+    assert np.array_equal(params.depth, depth_snapshot, equal_nan=True)
+    assert np.array_equal(params.stage, stage_snapshot, equal_nan=True)
+    assert np.array_equal(params.qx, qx_snapshot)
+    assert np.array_equal(params.qy, qy_snapshot)
+    # the particle's arrays must be independent copies, not aliases
+    assert not np.shares_memory(params.depth, particle.depth)
+    assert not np.shares_memory(params.stage, particle.stage)
+    assert not np.shares_memory(params.qx, particle.qx)
+    assert not np.shares_memory(params.qy, particle.qy)
+    # NaN depth is still treated as dry inside the particle's own copy
+    assert particle.depth[0, 0] == 0
+
+
+def test_params_uv_and_lists_not_mutated():
+    """u/v params and the particle_variables list must not be modified."""
+    params = particle_track.modelParams()
+    params.dx = 1.
+    params.model = 'DeltaRCM'
+    params.depth = np.ones((5, 5))
+    params.depth[0, 0] = 0.0  # dry cell: stage gains NaN only in the copy
+    params.stage = np.ones((5, 5))
+    params.u = np.ones((5, 5))
+    params.u[0, 1] = np.nan
+    params.v = np.ones((5, 5))
+    params.particle_variables = ['depth']
+    params.roi_grid = np.ones((5, 5))
+    u_snapshot = params.u.copy()
+    v_snapshot = params.v.copy()
+    stage_snapshot = params.stage.copy()
+    pv_snapshot = list(params.particle_variables)
+
+    particle = particle_track.Particles(params)
+
+    assert np.array_equal(params.u, u_snapshot, equal_nan=True)
+    assert np.array_equal(params.v, v_snapshot)
+    assert np.array_equal(params.stage, stage_snapshot, equal_nan=True)
+    assert params.particle_variables == pv_snapshot
+    # roi_flag is appended to the particle's own list, not the caller's
+    assert 'roi_flag' in particle.particle_variables
+
+
+def test_gamma_out_of_range_warns_and_clamps():
+    """gamma outside [0, 1] must warn, clamp, and keep weights >= 0."""
+    params = particle_track.modelParams()
+    params.dx = 1.
+    params.model = 'DeltaRCM'
+    params.depth = np.ones((5, 5))
+    # sloped stage so the routing weights are actually populated
+    params.stage = np.tile(np.linspace(1.0, 0.9, 5), (5, 1))
+    params.qx = np.zeros((5, 5))
+    params.qy = np.ones((5, 5))
+    params.verbose = True
+
+    params.gamma = 1.5
+    with pytest.warns(Warning, match='[Gg]amma'):
+        particle = particle_track.Particles(params)
+    assert particle.gamma == 1.0
+    assert particle.weight.min() >= 0
+
+    params.gamma = -0.2
+    with pytest.warns(Warning, match='[Gg]amma'):
+        particle = particle_track.Particles(params)
+    assert particle.gamma == 0.0
+    assert particle.weight.min() >= 0
+
+
+def test_cell_type_none_falls_back_to_estimation():
+    """Optional parameters set explicitly to None must use the fallback."""
+    params = particle_track.modelParams()
+    params.dx = 1.
+    params.model = 'DeltaRCM'
+    params.depth = np.ones((5, 5))
+    params.stage = np.ones((5, 5))
+    params.qx = np.zeros((5, 5))
+    params.qy = np.ones((5, 5))
+    params.cell_type = None
+    particle = particle_track.Particles(params)
+    # cell types were estimated from depth, including the -1 border ring
+    assert particle.cell_type.shape == (5, 5)
+    assert -1 in particle.cell_type
+
+
+def test_velocity_floor_preserves_sign():
+    """The tiny-velocity floor must not flip a negative velocity."""
+    params = particle_track.modelParams()
+    params.dx = 1.
+    params.model = 'DeltaRCM'
+    params.depth = np.ones((5, 5))
+    params.stage = np.ones((5, 5))
+    params.qx = np.zeros((5, 5))
+    params.qy = np.zeros((5, 5))
+    # tiny westward + northward discharge at the center cell
+    params.qx[2, 2] = -1e-9
+    params.qy[2, 2] = 1e-3
+    particle = particle_track.Particles(params)
+    # the floored u must stay negative so the velocity angle keeps
+    # pointing with the flow instead of rotating ~126 degrees
+    assert particle.u[2, 2] < 0
+    assert particle.velocity_angle[2, 2] > 0
+

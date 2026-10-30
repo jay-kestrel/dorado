@@ -30,7 +30,8 @@ def random_pick_seed(choices, probs=None):
 
     """
     # randomly pick tracer drop cell to use given a list of potential spots
-    if not probs:
+    # (guard on None -- `not probs` is ambiguous for ndarray probs)
+    if probs is None:
         probs = np.array([1 for i in list(range(len(choices)))])
     # find the corresp. index value from input 'choices' list of indices
     cutoffs = np.cumsum(probs)
@@ -134,9 +135,9 @@ def clear_borders(tiled_array):
 
     **Outputs** :
 
-        tiled_array : `ndarray`
-            The same 3D array as the input, but with the borders
-            in the first and second dimension set to 0.
+        None :
+            The input `tiled_array` is modified in place, with the
+            borders in the first and second dimension set to 0.
 
     """
     tiled_array[0,:,:] = 0.
@@ -367,10 +368,13 @@ def calc_travel_times(Particles, new_cell, ind, new_ind, dist):
 
 
 def check_for_boundary(new_inds, current_inds, cell_type):
-    """Ensure new location is not a boundary cell.
+    """Keep particles bordering a boundary cell from moving.
 
-    Function to make sure particle is not exiting the boundary with the
-    proposed new location.
+    Function to check the neighborhood of each particle's current
+    location for boundary (edge) cells, and to cancel the proposed
+    movement of any particle whose current location borders one, so
+    that particles at the edge of the domain remain where they are
+    for this iteration.
 
     **Inputs** :
 
@@ -398,8 +402,11 @@ def check_for_boundary(new_inds, current_inds, cell_type):
     # If so, then stop moving particle
     for i in range(0, len(new_inds)):
         # If particle borders an edge, cancel out any additional steps
-        if -1 in cell_type[current_inds[i][0]-1:current_inds[i][0]+2,
-                           current_inds[i][1]-1:current_inds[i][1]+2]:
+        # (lower slice bounds are clamped at 0 so that particles on the
+        # first row/column check a real neighborhood instead of silently
+        # wrapping around the domain via a negative slice)
+        if -1 in cell_type[max(0, current_inds[i][0]-1):current_inds[i][0]+2,
+                           max(0, current_inds[i][1]-1):current_inds[i][1]+2]:
             new_inds[i][0] = current_inds[i][0]
             new_inds[i][1] = current_inds[i][1]
 
@@ -424,6 +431,8 @@ def random_pick(probs):
             1-8 value chosen randomly based on the weighted probabilities
 
     """
+    # work on a copy so the shared weight array is not modified in place
+    probs = probs.copy()
     probs[np.isnan(probs)] = 0  # any nans are assigned as 0
     cutoffs = np.cumsum(probs)  # cumulative sum of all probabilities
     # randomly pick indices from cutoffs based on uniform distribution
@@ -436,7 +445,11 @@ def steep_descent(probs):
     """Choose value with greatest probability, no longer random.
 
     Pick the array value with the greatest probability, no longer a
-    stochastic process, instead just choosing the steepest descent
+    stochastic process, instead just choosing the steepest descent.
+    The current location (index 4) is excluded from consideration, and
+    the maximum is computed after that exclusion; if no neighboring
+    cell carries any weight (a dead end), the current location
+    (index 4) is returned. The input array is copied and not modified.
 
     **Inputs** :
 
@@ -450,13 +463,19 @@ def steep_descent(probs):
             1-8 value chosen by greatest probs
 
     """
-    max_val = np.nanmax(probs)
-    # remove initial location (index 4) from consideration
-    probs[4] = 0
-    # remove any locations from consideration beneath max value
-    probs[probs < max_val] = 0
+    # work on a copy so the shared weight array is not modified in place
+    probs = probs.copy()
     # any nans become ignored too
     probs[np.isnan(probs)] = 0
+    # remove initial location (index 4) from consideration
+    probs[4] = 0
+    # dead end: no neighbor carries any weight, so stay at the current
+    # cell rather than drifting to the first (NW) slot
+    if not np.any(probs > 0):
+        return 4
+    # remove any locations from consideration beneath max value
+    max_val = np.nanmax(probs)
+    probs[probs < max_val] = 0
 
     # will pick either the index corresponding to the max value if there
     # is just 1, or it will randomly choose between values in the event
@@ -517,7 +536,12 @@ def particle_stepper(Particles, current_inds, travel_times, start_optional):
                     new_cells))
     # put new indices into array
     new_inds = np.array(new_inds, dtype=np.int32)
-    new_inds[np.array(dist) == 0] = 0
+    # particles whose picked step distance is 0 did not move: keep them at
+    # their current indices instead of overwriting them with the (0, 0)
+    # sentinel, which collides with a real cell at the top-left corner
+    # when a user-supplied distances array contains a 0
+    zero_dist = np.array(dist) == 0
+    new_inds[zero_dist] = np.array(inds, dtype=np.int32)[zero_dist]
     # see if the indices are at boundaries
     new_inds = check_for_boundary(new_inds, inds, Particles.cell_type)
     # transform from np array to list

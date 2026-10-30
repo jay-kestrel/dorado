@@ -158,7 +158,9 @@ class Particles():
         # Define the water depth array
         if getattr(params, 'depth', None) is not None:
             try:
-                self.depth = params.depth
+                # copy so the in-place cleanup below does not modify the
+                # caller's array
+                self.depth = params.depth.copy()
                 self.depth[np.isnan(self.depth)] = 0
             except Exception:
                 raise ValueError("Water depth array incorrectly defined.")
@@ -179,7 +181,9 @@ class Particles():
         # Define the water stage array
         if getattr(params, 'stage', None) is not None:
             try:
-                self.stage = params.stage
+                # copy so the in-place cleanup below does not modify the
+                # caller's array
+                self.stage = params.stage.copy()
                 self.stage[self.depth == 0] = np.nan
             except Exception:
                 raise ValueError("Water stage array incorrectly defined.")
@@ -196,31 +200,31 @@ class Particles():
         else:
             raise ValueError("Insufficient information: Specify stage")
 
-        # check if hydrodynamic model input has been specified
-        if getattr(params, 'model', None) is not None:
-            pass
-        else:
-            params.model = []
+        # check if hydrodynamic model input has been specified (use a
+        # local value -- do not modify the caller's params object)
+        model = getattr(params, 'model', None)
+        if model is None:
+            model = []
 
         # Define discharge and velocities for all cells in domain
-        if params.model == 'DeltaRCM':
+        if model == 'DeltaRCM':
             if params.qx is not None and params.qy is not None:
-                self.qx = params.qx
+                self.qx = params.qx.copy()
                 self.qx[np.isnan(self.qx)] = 0
                 self.u = self.qx*self.depth/(self.depth**2 + 1e-8)
                 self.u[np.isnan(self.u)] = 0
 
-                self.qy = params.qy
+                self.qy = params.qy.copy()
                 self.qy[np.isnan(self.qy)] = 0
                 self.v = self.qy*self.depth/(self.depth**2 + 1e-8)
                 self.v[np.isnan(self.v)] = 0
 
             elif params.u is not None and params.v is not None:
-                self.u = params.u
+                self.u = params.u.copy()
                 self.u[np.isnan(self.u)] = 0
                 self.qx = self.u*self.depth
 
-                self.v = params.v
+                self.v = params.v.copy()
                 self.v[np.isnan(self.v)] = 0
                 self.qy = self.v*self.depth
 
@@ -234,7 +238,7 @@ class Particles():
                 self.u = self.qx*self.depth/(self.depth**2 + 1e-8)
                 self.u[np.isnan(self.u)] = 0
 
-                self.qy = params.qx
+                self.qy = params.qx.copy()
                 self.qy[np.isnan(self.qy)] = 0
                 self.v = self.qy*self.depth/(self.depth**2 + 1e-8)
                 self.v[np.isnan(self.v)] = 0
@@ -244,7 +248,7 @@ class Particles():
                 self.u[np.isnan(self.u)] = 0
                 self.qx = self.u*self.depth
 
-                self.v = params.u
+                self.v = params.u.copy()
                 self.v[np.isnan(self.v)] = 0
                 self.qy = self.v*self.depth
 
@@ -256,8 +260,18 @@ class Particles():
         self.velocity = np.sqrt(self.u**2+self.v**2)
         # cannot have 0/nans - leads to infinite/nantravel times
         self.velocity[self.velocity < 1e-8] = 1e-8
-        self.u[np.abs(self.u) < 1e-8] = 1e-8
-        self.v[np.abs(self.v) < 1e-8] = 1e-8
+        # floor tiny velocities to avoid 0/nans, preserving the sign of
+        # tiny negative values so that the velocity angle keeps pointing
+        # along the flow direction (exact zeros keep the historical
+        # positive floor)
+        tiny_u = np.abs(self.u) < 1e-8
+        self.u = np.where(tiny_u,
+                          (np.sign(self.u) + (self.u == 0.0))*1e-8,
+                          self.u)
+        tiny_v = np.abs(self.v) < 1e-8
+        self.v = np.where(tiny_v,
+                          (np.sign(self.v) + (self.v == 0.0))*1e-8,
+                          self.v)
         # Compute velocity orientation at each cell
         self.velocity_angle = np.arctan2(-1.0*self.u, self.v)
 
@@ -279,18 +293,28 @@ class Particles():
         except Exception:
             logger.info("Gamma parameter not specified - using 0.05")
             self.gamma = 0.05
+        # gamma outside [0, 1] produces negative routing weights and a
+        # badly biased sampling distribution -- warn and clamp, matching
+        # the diff_coeff pattern above
+        if self.gamma < 0 or self.gamma > 1:
+            if self.verbose:
+                warnings.warn("Specified gamma value is outside the range"
+                              " [0, 1]. Clamping to the nearest valid"
+                              " value")
+            self.gamma = min(max(self.gamma, 0.0), 1.0)
 
         try:
-            if params.diff_coeff < 0:
+            diff_coeff = params.diff_coeff
+            if diff_coeff < 0:
                 if self.verbose:
                     warnings.warn("Specified diffusion coefficient is negative"
                                   ". Rounding up to zero")
-                params.diff_coeff = 0.0
-            elif params.diff_coeff >= 2:
+                diff_coeff = 0.0
+            elif diff_coeff >= 2:
                 if self.verbose:
                     warnings.warn("Diffusion behaves non-physically when"
                                   " coefficient >= 2")
-            self.diff_coeff = float(params.diff_coeff)
+            self.diff_coeff = float(diff_coeff)
         except Exception:
             if getattr(params, 'steepest_descent', False) is True:
                 logger.info("Diffusion disabled for steepest descent")
@@ -300,16 +324,19 @@ class Particles():
                 self.diff_coeff = 0.2
 
         # Minimum depth for cell to be considered wet
-        try:
+        if getattr(params, 'dry_depth', None) is not None:
             self.dry_depth = params.dry_depth
-        except Exception:
+        else:
             logger.info("minimum depth for wetness not defined - using 10 cm")
             self.dry_depth = 0.1
 
         # Cell types: 2 = land, 1 = channel, 0 = ocean, -1 = edge
-        try:
+        # (guard on None -- a None value does not raise on attribute
+        # access, so try/except would let it slip through and crash later
+        # in the weight calculations)
+        if getattr(params, 'cell_type', None) is not None:
             self.cell_type = params.cell_type
-        except Exception:
+        else:
             logger.info("Cell Types not specified - Estimating from depth")
             self.cell_type = np.zeros_like(self.depth, dtype='int')
             self.cell_type[self.depth < self.dry_depth] = 2
@@ -335,55 +362,61 @@ class Particles():
         sqrt2 = np.sqrt(2)
         sqrt05 = np.sqrt(0.5)
 
-        # Define distances between cells in D8 sense
-        try:
+        # Define distances between cells in D8 sense (guard on None --
+        # a None value does not raise on attribute access)
+        if getattr(params, 'distances', None) is not None:
             self.distances = params.distances
-        except Exception:
+        else:
             # defined if not given
             self.distances = np.array([[sqrt2, 1, sqrt2],
                                        [1, 1, 1],
                                        [sqrt2, 1, sqrt2]])
 
-        # D8 components of x-unit vector
-        try:
+        # D8 components of x-unit vector (guard on None -- a None value
+        # does not raise on attribute access)
+        if getattr(params, 'ivec', None) is not None:
             self.ivec = params.ivec
-        except Exception:
+        else:
             # defined if not given
             self.ivec = np.array([[-sqrt05, 0, sqrt05],
                                   [-1, 0, 1],
                                   [-sqrt05, 0, sqrt05]])
 
-        # D8 components of y-unit vector
-        try:
+        # D8 components of y-unit vector (guard on None -- a None value
+        # does not raise on attribute access)
+        if getattr(params, 'jvec', None) is not None:
             self.jvec = params.jvec
-        except Exception:
+        else:
             # defined if not given
             self.jvec = np.array([[-sqrt05, -1, -sqrt05],
                                   [0, 0, 0],
                                   [sqrt05, 1, sqrt05]])
 
-        # Positive/Negative x-directions
-        try:
+        # Positive/Negative x-directions (guard on None -- a None value
+        # does not raise on attribute access)
+        if getattr(params, 'iwalk', None) is not None:
             self.iwalk = params.iwalk
-        except Exception:
+        else:
             # defined if not given
             self.iwalk = np.array([[-1, 0, 1],
                                    [-1, 0, 1],
                                    [-1, 0, 1]])
 
-        # Positive/Negative y-directions
-        try:
+        # Positive/Negative y-directions (guard on None -- a None value
+        # does not raise on attribute access)
+        if getattr(params, 'jwalk', None) is not None:
             self.jwalk = params.jwalk
-        except Exception:
+        else:
             # defined if not given
             self.jwalk = np.array([[-1, -1, -1],
                                    [0, 0, 0],
                                    [1, 1, 1]])
 
-        # Angles of D8 step directions
-        try:
+        # Angles of D8 step directions (guard on None -- a None value
+        # does not raise on attribute access)
+        if getattr(params, 'angles', None) is not None:
             self.angles = params.angles
-        except Exception:
+        else:
             # defined if not given
             self.angles = np.array([[3*pi/4, pi/2, pi/4],
                                     [pi, 0, 0],
@@ -427,9 +460,10 @@ class Particles():
             'v': self.v,
         }
 
-        # Read optional variables from params
+        # Read optional variables from params (copy the list so appending
+        # below does not modify the caller's list)
         if getattr(params, 'particle_variables', None) is not None:
-            self.particle_variables = params.particle_variables
+            self.particle_variables = list(params.particle_variables)
         else:
             self.particle_variables = []
 
@@ -515,6 +549,19 @@ class Particles():
                                                                      seed_yloc,
                                                                      seed_time,
                                                                      method)
+
+        # validate that all seed locations fall inside the domain, as
+        # out-of-bounds indices would otherwise silently wrap around the
+        # domain edges via negative indexing (skip when no particles are
+        # being seeded, e.g. when only restoring previous walk data)
+        L, W = self.depth.shape
+        if len(seed_xloc) > 0 and len(seed_yloc) > 0:
+            if (min(seed_xloc) < 0 or max(seed_xloc) > L - 1
+                    or min(seed_yloc) < 0 or max(seed_yloc) > W - 1):
+                raise ValueError('Seed location is outside of the domain:'
+                                 ' x indices must be in [0, ' + str(L - 1) +
+                                 '] and y indices must be in [0, ' +
+                                 str(W - 1) + '].')
 
         init_walk_data = dict()  # create init_walk_data dictionary
         # define base variables again
@@ -658,7 +705,7 @@ class Particles():
         # if there is no walk data raise an error
         if self.walk_data is None:
             raise ValueError('Particles have not been initialized.'
-                             ' Call the `particle_generator()` function.')
+                             ' Call the `generate_particles()` function.')
 
         all_walk_data = dict()  # init all_walk_data dictionary
 
@@ -722,6 +769,11 @@ class Particles():
         else:
             # If we ARE aiming for a specific time
             # iterate each particle until we get there
+            # init list for particles that exceed the max number of
+            # iterations before reaching the target time (initialized
+            # once for all particles, not re-initialized per particle)
+            _iter_particles = []
+
             # Loop through all particles
             for ii in list(range(self.Np_tracer)):
                 if len(all_times[ii]) > 1:
@@ -731,13 +783,11 @@ class Particles():
                     est_next_dt = 0.1
                 count = 1
 
-                # init list for too many particle iterations
-                _iter_particles = []
-
                 # Only iterate if this particle isn't already at a boundary:
-                if -1 not in self.cell_type[all_xinds[ii][-1]-1:
+                # (lower slice bounds clamped at 0 as in check_for_boundary)
+                if -1 not in self.cell_type[max(0, all_xinds[ii][-1]-1):
                                             all_xinds[ii][-1]+2,
-                                            all_yinds[ii][-1]-1:
+                                            max(0, all_yinds[ii][-1]-1):
                                             all_yinds[ii][-1]+2]:
                     # Loop until |target time - current time| <
                     #            |target time - estimated next time|
