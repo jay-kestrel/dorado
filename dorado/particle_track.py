@@ -777,9 +777,11 @@ class Particles():
                     optional_start_vars[var] = internal_var + new_var_list
                 elif var in ('stranded', 'stranded_time'):
                     # walk data predates stranding tracking: pad with
-                    # zeros so the list stays aligned per particle
+                    # zeros so each particle's list stays aligned with
+                    # its recorded steps
                     optional_start_vars[var] = \
-                        [[0] for _ in internal_xinds] + new_var_list
+                        [[0] * len(path) for path in internal_xinds] \
+                        + new_var_list
 
         if previous_walk_data is not None:
             # If the generator has been run before, or if new
@@ -802,9 +804,11 @@ class Particles():
                     optional_start_vars[var] = prev_var + new_var_list
                 elif var in ('stranded', 'stranded_time'):
                     # walk data predates stranding tracking: pad with
-                    # zeros so the list stays aligned per particle
+                    # zeros so each particle's list stays aligned with
+                    # its recorded steps
                     optional_start_vars[var] = \
-                        [[0] for _ in prev_xinds] + new_var_list
+                        [[0] * len(path) for path in prev_xinds] \
+                        + new_var_list
 
         # determine the new total number of particles we have now
         self.Np_tracer = len(start_xindices)
