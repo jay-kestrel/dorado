@@ -826,7 +826,7 @@ class Particles():
             
             # write out warning if particles exceed step limit
             if (len(_iter_particles) > 0) and (self.verbose is True):
-                warnings.warn(str(len(_iter_particles)) + "Particles"
+                warnings.warn(str(len(_iter_particles)) + " Particles"
                               " exceeded iteration limit before reaching the"
                               " target time, consider using a smaller"
                               " time-step. Particles are: " +

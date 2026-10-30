@@ -979,3 +979,31 @@ def test_water_bordered_domain_no_escape():
         assert min(path) >= 0
         assert max(path) < 6
 
+
+def test_over_limit_warning_message():
+    """The over-limit warning fires once with a correct, readable count.
+
+    Review probe (F10): the warning read '1Particles' (missing space)
+    and the count could miss earlier overflowers entirely.
+    """
+    params = particle_track.modelParams()
+    params.dx = 1.
+    params.model = 'DeltaRCM'
+    params.depth = np.ones((60, 60))
+    params.stage = np.ones((60, 60))
+    params.qx = np.zeros((60, 60))
+    params.qy = np.ones((60, 60))
+    # gamma = 0: the walk follows the discharge field only, so the
+    # particle always steps E/NE/SE (stay and uphill slots carry zero
+    # weight) and drifts east from the center. The rim sits 29 cells
+    # away while max_iter caps the run at 26 steps: the particle can
+    # neither reach the target time nor park, so it must overflow.
+    params.gamma = 0.0
+    particle = particle_track.Particles(params)
+    np.random.seed(3)
+    particle.generate_particles(1, [30], [30])
+    with pytest.warns(Warning, match=r'\d+ Particles exceeded') as record:
+        particle.run_iteration(target_time=1e9, max_iter=25)
+    assert len(record) == 1
+    assert '1 Particles exceeded' in str(record[0].message)
+
