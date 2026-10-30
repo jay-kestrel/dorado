@@ -1,0 +1,291 @@
+{
+  "source_revision": "6144c21400389abde5fbf0d2bc5b7d359f850852",
+  "policy": "Owner-disabled Actions: local verification only; no fresh CI pass claimed.",
+  "equivalence_command": "python -m pytest -q -s tests/test_equivalence.py",
+  "equivalence_summary": "14 passed in 22.92s",
+  "equivalence_metrics": [
+    {
+      "dataset": "rcm",
+      "metrics": {
+        "final_column": {
+          "ks": 0.0050000000000000044,
+          "tvd": 0.015199999999999983
+        },
+        "final_position": {
+          "ks": 0.006900000000000017,
+          "tvd": 0.03565
+        },
+        "final_row": {
+          "ks": 0.0034499999999999947,
+          "tvd": 0.010749999999999992
+        },
+        "first_displacement": {
+          "ks": 0.008749999999999925,
+          "tvd": 0.009750000000000019
+        },
+        "stranded_ever": {
+          "ks": 0.0,
+          "tvd": 0.0
+        },
+        "stranded_final": {
+          "ks": 0.0,
+          "tvd": 0.0
+        },
+        "stranded_time": {
+          "ks": 0.0,
+          "tvd": 0.0
+        },
+        "travel_time": {
+          "ks": 0.006850000000000023,
+          "tvd": 0.011849999999999977
+        },
+        "walk_length": {
+          "ks": 0.0,
+          "tvd": 0.0
+        }
+      }
+    },
+    {
+      "dataset": "anuga",
+      "metrics": {
+        "final_column": {
+          "ks": 0.005600000000000049,
+          "tvd": 0.009599999999999992
+        },
+        "final_position": {
+          "ks": 0.006550000000000056,
+          "tvd": 0.04635
+        },
+        "final_row": {
+          "ks": 0.005499999999999949,
+          "tvd": 0.011600000000000008
+        },
+        "first_displacement": {
+          "ks": 0.0038000000000000256,
+          "tvd": 0.004900000000000012
+        },
+        "stranded_ever": {
+          "ks": 0.0,
+          "tvd": 0.0
+        },
+        "stranded_final": {
+          "ks": 0.0,
+          "tvd": 0.0
+        },
+        "stranded_time": {
+          "ks": 0.0,
+          "tvd": 0.0
+        },
+        "travel_time": {
+          "ks": 0.015000000000000013,
+          "tvd": 0.013649999999999978
+        },
+        "walk_length": {
+          "ks": 0.0,
+          "tvd": 0.0
+        }
+      }
+    },
+    {
+      "dataset": "synthetic",
+      "metrics": {
+        "final_column": {
+          "ks": 0.005199999999999982,
+          "tvd": 0.007349999999999982
+        },
+        "final_position": {
+          "ks": 0.003349999999999964,
+          "tvd": 0.013000000000000001
+        },
+        "final_row": {
+          "ks": 0.0030999999999999917,
+          "tvd": 0.003949999999999982
+        },
+        "first_displacement": {
+          "ks": 0.0008500000000000174,
+          "tvd": 0.001349999999999997
+        },
+        "stranded_ever": {
+          "ks": 0.0,
+          "tvd": 0.0
+        },
+        "stranded_final": {
+          "ks": 0.0006500000000000394,
+          "tvd": 0.0006500000000000117
+        },
+        "stranded_time": {
+          "ks": 0.0024500000000000632,
+          "tvd": 0.00319999999999999
+        },
+        "travel_time": {
+          "ks": 0.0045999999999999375,
+          "tvd": 0.005749999999999981
+        },
+        "walk_length": {
+          "ks": 0.0007500000000000284,
+          "tvd": 0.001350000000000004
+        }
+      }
+    }
+  ],
+  "weight_parity": [
+    {
+      "context": "rcm-bundled",
+      "max_relative_difference": 5.724516265870094e-16
+    },
+    {
+      "context": "anuga-bundled",
+      "max_relative_difference": 5.60355130066893e-16
+    },
+    {
+      "context": "synthetic-0-park",
+      "max_relative_difference": 5.62362885053967e-16
+    },
+    {
+      "context": "synthetic-1-park",
+      "max_relative_difference": 5.584799771873959e-16
+    },
+    {
+      "context": "synthetic-2-park",
+      "max_relative_difference": 5.946455353715045e-16
+    },
+    {
+      "context": "synthetic-0-none",
+      "max_relative_difference": 5.62362885053967e-16
+    },
+    {
+      "context": "synthetic-1-none",
+      "max_relative_difference": 5.584799771873959e-16
+    },
+    {
+      "context": "synthetic-2-none",
+      "max_relative_difference": 5.946455353715045e-16
+    },
+    {
+      "context": "gamma-0.0",
+      "max_relative_difference": 5.290501846304024e-16
+    },
+    {
+      "context": "gamma-1.0",
+      "max_relative_difference": 5.633977710067005e-16
+    },
+    {
+      "context": "synthetic-1000x2000",
+      "max_relative_difference": 7.219842501838015e-16
+    }
+  ],
+  "weight_memory": [
+    {
+      "impl": "reference",
+      "shape": [
+        1000,
+        2000
+      ],
+      "seed": 0,
+      "peak_rss_delta_mb": 1039.7,
+      "seconds": 2.442
+    },
+    {
+      "impl": "fused",
+      "shape": [
+        1000,
+        2000
+      ],
+      "seed": 0,
+      "peak_rss_delta_mb": 249.6,
+      "seconds": 2.482
+    }
+  ],
+  "weight_memory_commands": [
+    "python tests/_weight_reference.py reference 1000 2000",
+    "python tests/_weight_reference.py fused 1000 2000"
+  ],
+  "full_pytest_command": "python -m pytest -q",
+  "full_pytest_summary": "406 passed, 5 skipped, 20 warnings in 47.69s",
+  "ruff_command": "python -m ruff check dorado tests benchmarks",
+  "ruff_output": "All checks passed!",
+  "cargo_command": "cargo test --manifest-path rust/Cargo.toml",
+  "cargo_summaries": [
+    "test result: ok. 37 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s",
+    "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+    "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+  ],
+  "build_command": "maturin develop --release",
+  "build_log_tail": [
+    "   Compiling rand_chacha v0.3.1",
+    "   Compiling rand v0.8.8",
+    "   Compiling pyo3-macros v0.30.1",
+    "   Compiling dorado-native v2.7.1 (/home/user/work/dorado/rust)",
+    "    Finished `release` profile [optimized] target(s) in 10.17s",
+    "\ud83d\udce6 Built wheel for abi3 Python \u2265 3.11 to /tmp/.tmpsPmeBb/pydorado-2.7.1-cp311-abi3-linux_x86_64.whl",
+    "\u270f\ufe0f Setting installed package as editable",
+    "\ud83d\udee0 Installed pydorado-2.7.1"
+  ],
+  "source_script_lines": [
+    "\"\"\"Record numeric parity from the unchanged gate tests, plus local log evidence.\"\"\"",
+    "import json",
+    "from pathlib import Path",
+    "import subprocess",
+    "import sys",
+    "from unittest.mock import patch",
+    "",
+    "sys.path[:0] = [str(Path.cwd()), str(Path.cwd() / \"tests\")]",
+    "import test_make_weight_fused as weight_tests",
+    "",
+    "",
+    "WORK = Path(\"/home/user/work\")",
+    "rows = []",
+    "original = weight_tests._assert_parity",
+    "",
+    "",
+    "def record_parity(fused, reference, context):",
+    "    value = original(fused, reference, context)",
+    "    rows.append({\"context\": context, \"max_relative_difference\": value})",
+    "    return value",
+    "",
+    "",
+    "def main():",
+    "    with patch.object(weight_tests, \"_assert_parity\", record_parity):",
+    "        weight_tests.test_parity_bundled_rcm()",
+    "        weight_tests.test_parity_bundled_anuga()",
+    "        for stranding in (\"park\", \"none\"):",
+    "            for seed in (0, 1, 2):",
+    "                weight_tests.test_parity_synthetic_small(seed, stranding)",
+    "        for gamma in (0.0, 1.0):",
+    "            weight_tests.test_parity_gamma_extremes(gamma)",
+    "        weight_tests.test_parity_synthetic_1000x2000()",
+    "    metrics = [json.loads(line.split(\"EQUIVALENCE \", 1)[1])",
+    "               for line in (WORK / \"perf-equivalence.log\").read_text().splitlines()",
+    "               if \"EQUIVALENCE \" in line]",
+    "    assert len(metrics) == 3 and len(rows) == 11",
+    "    report = {",
+    "        \"source_revision\": subprocess.check_output([\"git\", \"rev-parse\", \"HEAD\"], text=True).strip(),",
+    "        \"policy\": \"Owner-disabled Actions: local verification only; no fresh CI pass claimed.\",",
+    "        \"equivalence_command\": \"python -m pytest -q -s tests/test_equivalence.py\",",
+    "        \"equivalence_summary\": (WORK / \"perf-equivalence.log\").read_text().splitlines()[-1],",
+    "        \"equivalence_metrics\": metrics,",
+    "        \"weight_parity\": rows,",
+    "        \"weight_memory\": [json.loads((WORK / f\"perf-weight-{name}.log\").read_text().splitlines()[-1])",
+    "                          for name in (\"reference\", \"fused\")],",
+    "        \"weight_memory_commands\": [f\"python tests/_weight_reference.py {name} 1000 2000\"",
+    "                                   for name in (\"reference\", \"fused\")],",
+    "        \"full_pytest_command\": \"python -m pytest -q\",",
+    "        \"full_pytest_summary\": (WORK / \"perf-full-pytest.log\").read_text().splitlines()[-1],",
+    "        \"ruff_command\": \"python -m ruff check dorado tests benchmarks\",",
+    "        \"ruff_output\": (WORK / \"perf-ruff.log\").read_text().strip(),",
+    "        \"cargo_command\": \"cargo test --manifest-path rust/Cargo.toml\",",
+    "        \"cargo_summaries\": [line for line in (WORK / \"perf-cargo-test.log\").read_text().splitlines()",
+    "                            if line.startswith(\"test result:\")],",
+    "        \"build_command\": \"maturin develop --release\",",
+    "        \"build_log_tail\": (WORK / \"perf-build.log\").read_text().splitlines()[-8:],",
+    "        \"source_script_lines\": Path(__file__).read_text().splitlines(),",
+    "    }",
+    "    Path(\"benchmarks/results/post-port-verification.json\").write_text(",
+    "        json.dumps(report, indent=2, allow_nan=False) + \"\\n\")",
+    "    print(json.dumps(rows, indent=2))",
+    "",
+    "",
+    "if __name__ == \"__main__\":",
+    "    main()"
+  ]
+}

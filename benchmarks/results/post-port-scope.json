@@ -1,0 +1,248 @@
+{
+  "metadata": {
+    "timestamp_utc": "2026-10-30T21:34:06.054774+00:00",
+    "revision": "6144c21400389abde5fbf0d2bc5b7d359f850852",
+    "working_tree_dirty": true,
+    "routing_source_sha256": {
+      "particle_track.py": "bfc217c904679c61486ccd4a9be5233d65352cc88d293416632293df1c371757",
+      "lagrangian_walker.py": "ee88ffd25fc2651ae91108b0b6995e915075c0c96c4e6a825e1d119c39368088"
+    },
+    "python": "3.13.14",
+    "numpy": "2.3.5",
+    "platform": "Linux-6.1.158+-x86_64-with-glibc2.41",
+    "machine": "x86_64",
+    "processor": "",
+    "logical_cpus": 8,
+    "timer": "time.perf_counter",
+    "timed_region": "run_iteration only",
+    "warmup_iterations": 1,
+    "state_reset": "deepcopy staged particles and reset RNG outside timing",
+    "normalization": "attempted particle-steps, including frozen particles",
+    "thread_environment": {
+      "OMP_NUM_THREADS": null,
+      "OPENBLAS_NUM_THREADS": null,
+      "MKL_NUM_THREADS": null
+    }
+  },
+  "command": "python /home/user/work/perf_scope.py (DORADO_BACKEND/DORADO_COBOL unset)",
+  "source_script_lines": [
+    "\"\"\"Check the actual timed-region scope; profiles are not performance-gate samples.\"\"\"",
+    "import cProfile",
+    "import json",
+    "from pathlib import Path",
+    "import pstats",
+    "import sys",
+    "from unittest.mock import patch",
+    "",
+    "import numpy as np",
+    "",
+    "sys.path.insert(0, str(Path.cwd()))",
+    "from benchmarks import bench_routing as bench",
+    "from benchmarks.numpy_stepper import make_stepper",
+    "from dorado import lagrangian_walker as lw",
+    "",
+    "",
+    "def profile_backend(workload, backend):",
+    "    particles = bench.stage_particles(workload, 2500, backend, 0)",
+    "    profiler = cProfile.Profile()",
+    "    np.random.seed(0)",
+    "    if backend == \"numpy\":",
+    "        with patch.object(lw, \"particle_stepper\", make_stepper(particles)):",
+    "            profiler.runcall(bench.route, particles, 50)",
+    "    else:",
+    "        profiler.runcall(bench.route, particles, 50)",
+    "    stats = pstats.Stats(profiler)",
+    "    appends = [value for key, value in stats.stats.items()",
+    "               if key[2] == \"<method 'append' of 'list' objects>\"]",
+    "    assert len(appends) == 1",
+    "    callers = [{\"function\": key[2], \"calls\": value[1]}",
+    "               for key, value in appends[0][4].items()]",
+    "    history_appends = sum(row[\"calls\"] for row in callers",
+    "                          if row[\"function\"] == \"run_iteration\")",
+    "    iterations = [value[1] for key, value in stats.stats.items()",
+    "                  if key[2] == \"run_iteration\"]",
+    "    assert history_appends == 625000 and iterations == [50], (backend, callers, iterations)",
+    "    schema = {}",
+    "    for key, rows in particles.walk_data.items():",
+    "        values = np.asarray(rows)",
+    "        schema[key] = {\"shape\": list(values.shape), \"dtype\": str(values.dtype)}",
+    "        assert values.shape == (2500, 51)",
+    "    return {\"backend\": backend, \"total_list_appends\": appends[0][1],",
+    "            \"history_list_appends\": history_appends, \"append_callers\": callers,",
+    "            \"run_iteration_calls\": iterations[0], \"walk_data_schema\": schema}",
+    "",
+    "",
+    "def main():",
+    "    report = {",
+    "        \"metadata\": bench.metadata(),",
+    "        \"command\": \"python /home/user/work/perf_scope.py (DORADO_BACKEND/DORADO_COBOL unset)\",",
+    "        \"source_script_lines\": Path(__file__).read_text().splitlines(),",
+    "        \"results\": [profile_backend(bench.load_workload(\"anuga\"), backend)",
+    "                    for backend in (\"python\", \"numpy\", \"rust\")],",
+    "    }",
+    "    Path(\"benchmarks/results/post-port-scope.json\").write_text(",
+    "        json.dumps(report, indent=2, allow_nan=False) + \"\\n\")",
+    "    print(json.dumps(report[\"results\"], indent=2))",
+    "",
+    "",
+    "if __name__ == \"__main__\":",
+    "    main()"
+  ],
+  "results": [
+    {
+      "backend": "python",
+      "total_list_appends": 875000,
+      "history_list_appends": 625000,
+      "append_callers": [
+        {
+          "function": "stranding_park_decisions",
+          "calls": 250000
+        },
+        {
+          "function": "run_iteration",
+          "calls": 625000
+        }
+      ],
+      "run_iteration_calls": 50,
+      "walk_data_schema": {
+        "xinds": {
+          "shape": [
+            2500,
+            51
+          ],
+          "dtype": "int64"
+        },
+        "yinds": {
+          "shape": [
+            2500,
+            51
+          ],
+          "dtype": "int64"
+        },
+        "travel_times": {
+          "shape": [
+            2500,
+            51
+          ],
+          "dtype": "float64"
+        },
+        "stranded": {
+          "shape": [
+            2500,
+            51
+          ],
+          "dtype": "int64"
+        },
+        "stranded_time": {
+          "shape": [
+            2500,
+            51
+          ],
+          "dtype": "int64"
+        }
+      }
+    },
+    {
+      "backend": "numpy",
+      "total_list_appends": 625100,
+      "history_list_appends": 625000,
+      "append_callers": [
+        {
+          "function": "run_iteration",
+          "calls": 625000
+        },
+        {
+          "function": "column_stack",
+          "calls": 100
+        }
+      ],
+      "run_iteration_calls": 50,
+      "walk_data_schema": {
+        "xinds": {
+          "shape": [
+            2500,
+            51
+          ],
+          "dtype": "int64"
+        },
+        "yinds": {
+          "shape": [
+            2500,
+            51
+          ],
+          "dtype": "int64"
+        },
+        "travel_times": {
+          "shape": [
+            2500,
+            51
+          ],
+          "dtype": "float64"
+        },
+        "stranded": {
+          "shape": [
+            2500,
+            51
+          ],
+          "dtype": "int64"
+        },
+        "stranded_time": {
+          "shape": [
+            2500,
+            51
+          ],
+          "dtype": "float64"
+        }
+      }
+    },
+    {
+      "backend": "rust",
+      "total_list_appends": 625000,
+      "history_list_appends": 625000,
+      "append_callers": [
+        {
+          "function": "run_iteration",
+          "calls": 625000
+        }
+      ],
+      "run_iteration_calls": 50,
+      "walk_data_schema": {
+        "xinds": {
+          "shape": [
+            2500,
+            51
+          ],
+          "dtype": "int64"
+        },
+        "yinds": {
+          "shape": [
+            2500,
+            51
+          ],
+          "dtype": "int64"
+        },
+        "travel_times": {
+          "shape": [
+            2500,
+            51
+          ],
+          "dtype": "float64"
+        },
+        "stranded": {
+          "shape": [
+            2500,
+            51
+          ],
+          "dtype": "int64"
+        },
+        "stranded_time": {
+          "shape": [
+            2500,
+            51
+          ],
+          "dtype": "float64"
+        }
+      }
+    }
+  ]
+}
