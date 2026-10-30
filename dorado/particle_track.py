@@ -301,14 +301,13 @@ class Particles():
             logger.info("Gamma parameter not specified - using 0.05")
             self.gamma = 0.05
         # gamma outside [0, 1] produces negative routing weights and a
-        # badly biased sampling distribution -- warn and clamp, matching
-        # the diff_coeff pattern above
+        # non-monotonic cumulative distribution, so picks silently land
+        # on invalid cells -- reject the configuration instead of
+        # corrupting the walk (review finding F3)
         if self.gamma < 0 or self.gamma > 1:
-            if self.verbose:
-                warnings.warn("Specified gamma value is outside the range"
-                              " [0, 1]. Clamping to the nearest valid"
-                              " value")
-            self.gamma = min(max(self.gamma, 0.0), 1.0)
+            raise ValueError("Specified gamma value is outside the range"
+                             " [0, 1]. Gamma must satisfy"
+                             " 0 <= gamma <= 1.")
 
         try:
             diff_coeff = params.diff_coeff
@@ -943,7 +942,7 @@ class Particles():
             
             # write out warning if particles exceed step limit
             if (len(_iter_particles) > 0) and (self.verbose is True):
-                warnings.warn(str(len(_iter_particles)) + "Particles"
+                warnings.warn(str(len(_iter_particles)) + " Particles"
                               " exceeded iteration limit before reaching the"
                               " target time, consider using a smaller"
                               " time-step. Particles are: " +

@@ -8,6 +8,7 @@ import sys, os
 sys.path.append(os.path.realpath(os.path.dirname(__file__)+"/.."))
 
 from dorado import particle_track
+from dorado import lagrangian_walker
 from dorado import parallel_routing
 import numpy as np
 
@@ -1082,8 +1083,13 @@ def test_params_uv_and_lists_not_mutated():
     assert 'roi_flag' in particle.particle_variables
 
 
-def test_gamma_out_of_range_warns_and_clamps():
-    """gamma outside [0, 1] must warn, clamp, and keep weights >= 0."""
+def test_gamma_out_of_range_raises():
+    """gamma outside [0, 1] must raise ValueError instead of corrupting picks.
+
+    Review probe (F3): gamma = 1.5 produced negative weights, a
+    non-monotonic cumulative distribution, and 43.5% of picks landing
+    on a single invalid cell with no warning of any kind.
+    """
     params = particle_track.modelParams()
     params.dx = 1.
     params.model = 'DeltaRCM'
@@ -1092,19 +1098,14 @@ def test_gamma_out_of_range_warns_and_clamps():
     params.stage = np.tile(np.linspace(1.0, 0.9, 5), (5, 1))
     params.qx = np.zeros((5, 5))
     params.qy = np.ones((5, 5))
-    params.verbose = True
 
     params.gamma = 1.5
-    with pytest.warns(Warning, match='[Gg]amma'):
-        particle = particle_track.Particles(params)
-    assert particle.gamma == 1.0
-    assert particle.weight.min() >= 0
+    with pytest.raises(ValueError, match='[Gg]amma'):
+        particle_track.Particles(params)
 
     params.gamma = -0.2
-    with pytest.warns(Warning, match='[Gg]amma'):
-        particle = particle_track.Particles(params)
-    assert particle.gamma == 0.0
-    assert particle.weight.min() >= 0
+    with pytest.raises(ValueError, match='[Gg]amma'):
+        particle_track.Particles(params)
 
 
 def test_cell_type_none_falls_back_to_estimation():
@@ -1140,4 +1141,87 @@ def test_velocity_floor_preserves_sign():
     # pointing with the flow instead of rotating ~126 degrees
     assert particle.u[2, 2] < 0
     assert particle.velocity_angle[2, 2] > 0
+
+
+def test_stepper_freezes_out_of_domain_step():
+    """A step off an all-water domain must freeze, not record a wrap.
+
+    Review probe (F1): a particle sitting on a border cell of a domain
+    with no -1 edge markers has an all-zero weight row, so random_pick
+    deterministically returns slot 0 (NW) and steps to a negative row;
+    nothing bounds-checked the result.
+    """
+    params = particle_track.modelParams()
+    params.dx = 1.
+    params.model = 'DeltaRCM'
+    params.depth = np.ones((6, 6))
+    params.stage = np.ones((6, 6))
+    params.qx = np.zeros((6, 6))
+    params.qy = np.ones((6, 6))
+    params.cell_type = np.zeros((6, 6))  # water everywhere: no -1 edges
+    particle = particle_track.Particles(params)
+    new_inds, travel_times, _ = lagrangian_walker.particle_stepper(
+        particle, [[0, 2]], [0.], {})
+    assert new_inds[0] == [0, 2]
+    assert 0 <= new_inds[0][0] < 6
+    assert 0 <= new_inds[0][1] < 6
+
+
+def test_water_bordered_domain_no_escape():
+    """Particles must never walk off a water-bordered domain.
+
+    Regression for review finding F1 (the 498/500 seeded-escape probe):
+    on a 6x6 all-water domain with stage sloped downhill-outward,
+    unpatched code let particles march through the rim into negative
+    indices, where every downstream lookup wrapped silently and
+    corrupted the spatial statistics.
+    """
+    params = particle_track.modelParams()
+    params.dx = 1.
+    params.model = 'DeltaRCM'
+    params.depth = np.ones((6, 6))
+    params.qx = np.zeros((6, 6))
+    params.qy = np.ones((6, 6))
+    params.cell_type = np.zeros((6, 6))  # all water: no -1 edge markers
+    params.gamma = 1.0  # pure stage-gradient walk, drifts outward
+    ii, jj = np.meshgrid(np.arange(6), np.arange(6), indexing='ij')
+    # high center, falling off toward every edge: downhill-outward
+    params.stage = 2.0 - 0.25 * (np.abs(ii - 2.5) + np.abs(jj - 2.5))
+    particle = particle_track.Particles(params)
+    np.random.seed(0)
+    particle.generate_particles(500, [3] * 500, [3] * 500)
+    walk = {}
+    for _ in range(8):
+        walk = particle.run_iteration()
+    for path in walk['xinds'] + walk['yinds']:
+        assert min(path) >= 0
+        assert max(path) < 6
+
+
+def test_over_limit_warning_message():
+    """The over-limit warning fires once with a correct, readable count.
+
+    Review probe (F10): the warning read '1Particles' (missing space)
+    and the count could miss earlier overflowers entirely.
+    """
+    params = particle_track.modelParams()
+    params.dx = 1.
+    params.model = 'DeltaRCM'
+    params.depth = np.ones((60, 60))
+    params.stage = np.ones((60, 60))
+    params.qx = np.zeros((60, 60))
+    params.qy = np.ones((60, 60))
+    # gamma = 0: the walk follows the discharge field only, so the
+    # particle always steps E/NE/SE (stay and uphill slots carry zero
+    # weight) and drifts east from the center. The rim sits 29 cells
+    # away while max_iter caps the run at 26 steps: the particle can
+    # neither reach the target time nor park, so it must overflow.
+    params.gamma = 0.0
+    particle = particle_track.Particles(params)
+    np.random.seed(3)
+    particle.generate_particles(1, [30], [30])
+    with pytest.warns(Warning, match=r'\d+ Particles exceeded') as record:
+        particle.run_iteration(target_time=1e9, max_iter=25)
+    assert len(record) == 1
+    assert '1 Particles exceeded' in str(record[0].message)
 
