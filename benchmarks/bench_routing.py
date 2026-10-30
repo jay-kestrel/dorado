@@ -29,6 +29,7 @@ sys.path.insert(0, str(ROOT))
 # Imported after the sys.path bootstrap so the script runs from a source
 # checkout without installing the package.
 from dorado import lagrangian_walker as lw  # noqa: E402
+from dorado import cobol_walk as cw  # noqa: E402
 from dorado.particle_track import Particles, modelParams  # noqa: E402
 
 
@@ -70,6 +71,11 @@ def rust_available() -> bool:
         "backend" in inspect.signature(Particles).parameters
         and importlib.util.find_spec("dorado._native") is not None
     )
+
+
+def cobol_available() -> bool:
+    """The COBOL backend needs its built shared object on disk."""
+    return (ROOT / "dorado" / "lib" / "dorado_cobol.so").exists()
 
 
 def stage_particles(workload: Workload, count: int, backend: str, seed: int) -> Particles:
@@ -116,10 +122,15 @@ def benchmark(workload: Workload, count: int, backend: str, steps: int,
     if backend == "numpy":
         from benchmarks.numpy_stepper import make_stepper
         context = patch.object(lw, "particle_stepper", make_stepper(staged))
+    elif backend == "cobol":
+        # the walk core dispatches on DORADO_COBOL inside
+        # particle_stepper; a missing .so raises there rather than
+        # falling back silently
+        context = patch.dict(os.environ, {"DORADO_COBOL": "1"})
     with context:
         elapsed, moved = measure(staged, steps, repeats, seed)
     median = statistics.median(elapsed)
-    return {
+    row = {
         "workload": workload.name, "shape": list(workload.params.depth.shape),
         "dx": workload.params.dx, "data_sha256": workload.data_sha256,
         "backend": backend, "particles": count, "steps": steps,
@@ -128,6 +139,10 @@ def benchmark(workload: Workload, count: int, backend: str, steps: int,
         "microseconds_per_particle_step": median * 1e6 / (count * steps),
         "appended_steps": moved,
     }
+    if backend == "cobol":
+        row["implementation"] = "cobol"
+        row["gnucobol_version"] = cw.gnucobol_version()
+    return row
 
 
 def metadata() -> dict:
@@ -176,7 +191,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--quick", action="store_true", help="ANUGA, 500 particles, 3 steps, 1 repeat")
-    parser.add_argument("--backend", nargs="+", choices=("python", "numpy", "rust"))
+    parser.add_argument("--backend", nargs="+", choices=("python", "numpy", "rust", "cobol"))
     parser.add_argument("--steps", type=positive_int, help="override both field iteration counts")
     parser.add_argument("--repeats", type=positive_int)
     parser.add_argument("--seed", type=int, default=0)
@@ -193,6 +208,12 @@ def main(argv: list[str] | None = None) -> int:
             parser.error(reason)
         backends.remove("rust")
         skipped.append({"backend": "rust", "reason": reason})
+    if "cobol" in backends and not cobol_available():
+        reason = "COBOL kernels not built; run `make -C cobol` (requires gnucobol3)"
+        if args.backend:
+            parser.error(reason)
+        backends.remove("cobol")
+        skipped.append({"backend": "cobol", "reason": reason})
     workloads = [load_workload(name) for name in (["anuga"] if args.quick else ["rcm", "anuga"])]
     counts = [500] if args.quick else [500, 2500, 5000]
     repeats = args.repeats or (1 if args.quick else 3)
