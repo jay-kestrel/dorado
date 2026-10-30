@@ -20,6 +20,13 @@ on:
   schedule:
     - cron: '0 0 3 * *'  # run workflow at 12AM on third day of every month
 
+# Least-privilege GITHUB_TOKEN: the org default workflow token is read-only
+# (the failed master builds' logs show "GITHUB_TOKEN Permissions: Contents:
+# read"), and no permissions block previously overrode it. Everything runs
+# read-only; only the docs job elevates, for the gh-pages deploy.
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ${{ matrix.os }}
@@ -192,6 +199,12 @@ jobs:
 
 
   docs:
+    # The deploy step pushes gh-pages with secrets.GITHUB_TOKEN, which needs
+    # contents: write. Under the org's read-only default token that push
+    # fails with git exit code 128 — the docs failure seen in master push run
+    # 41109358969 — so this job elevates its token explicitly.
+    permissions:
+      contents: write
     runs-on: ubuntu-latest
     env:
       PIP_BREAK_SYSTEM_PACKAGES: "1"  # ubuntu system python is externally managed
