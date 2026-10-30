@@ -185,7 +185,6 @@ def unsteady_plots(dx, Np_tracer, seed_xloc, seed_yloc, num_steps, timestep,
     # init params
     params = modelParams()
     params.dx = dx
-    params.verbose = False
     # make directory to save the data
     if folder_name is None:
         folder_name = os.getcwd()
