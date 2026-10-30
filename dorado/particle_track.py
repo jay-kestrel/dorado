@@ -244,7 +244,14 @@ def check_stranding_params(params):
 
 
 class Particles():
-    """Class for the particle(s) that is(are) going to be routed."""
+    """Class for the particle(s) that is(are) going to be routed.
+
+    Particles may optionally carry per-particle attributes (a numeric
+    size and/or a named kind, see :obj:`generate_particles`) that modify
+    their transport behavior (travel time, diffusion, deposition) and are
+    persisted in walk_data; without them all particles behave as
+    identical passive tracers.
+    """
 
     def __init__(self, params):
         """Check input parameters and assign default values where/if needed.
@@ -412,14 +419,13 @@ class Particles():
             logger.info("Gamma parameter not specified - using 0.05")
             self.gamma = 0.05
         # gamma outside [0, 1] produces negative routing weights and a
-        # badly biased sampling distribution -- warn and clamp, matching
-        # the diff_coeff pattern above
+        # non-monotonic cumulative distribution, so picks silently land
+        # on invalid cells -- reject the configuration instead of
+        # corrupting the walk (review finding F3)
         if self.gamma < 0 or self.gamma > 1:
-            if self.verbose:
-                warnings.warn("Specified gamma value is outside the range"
-                              " [0, 1]. Clamping to the nearest valid"
-                              " value")
-            self.gamma = min(max(self.gamma, 0.0), 1.0)
+            raise ValueError("Specified gamma value is outside the range"
+                             " [0, 1]. Gamma must satisfy"
+                             " 0 <= gamma <= 1.")
 
         try:
             diff_coeff = params.diff_coeff
@@ -623,7 +629,9 @@ class Particles():
                            seed_yloc,
                            seed_time=0,
                            method='random',
-                           previous_walk_data=None):
+                           previous_walk_data=None,
+                           particle_size=None,
+                           particle_type=None):
         """Generate a set of particles in defined locations.
 
         After a :obj:`dorado.particle_track.Particles` class has been
@@ -676,6 +684,45 @@ class Particles():
                 ['travel_times'][5][10] is the travel time of the 5th particle
                 at the 10th iteration.
 
+            particle_size : `float`, `int`, `list`, `numpy.ndarray`, optional
+                Size attribute to assign to the newly generated particles.
+                Either a single value (applied to all Np_tracer new
+                particles) or a list/array of length Np_tracer (entries must
+                be numeric and > 0). Sizes scale transport behavior: travel
+                time is multiplied by the size and the diffusion term by
+                1/size, so bigger particles move slower and diffuse less.
+                When a particle_type is also given, the size and preset
+                multipliers multiply. The default value is None (no sizes).
+
+            particle_type : `str`, `list`, optional
+                Name of the particle kind to assign to the newly generated
+                particles, either a single name (applied to all Np_tracer
+                new particles) or a list of names of length Np_tracer. Each
+                name must be a key of
+                :obj:`dorado.lagrangian_walker.KIND_PRESETS` (a dict of
+                illustrative default kinds that users may inspect and
+                extend). A kind applies preset multipliers for travel time
+                and diffusion, and a per-step deposition probability: a
+                deposited particle stops moving permanently. When both
+                particle_size and particle_type are given, the size and
+                preset multipliers multiply and the deposition probability
+                comes from the preset. The default value is None (no types).
+
+        Notes
+        -----
+
+        The per-particle attributes are persistent: when any particle_size
+        or particle_type is provided (in this or any prior call), they are
+        stored in walk_data under the keys 'particle_size',
+        'particle_type', and a derived 'deposited' flag (0/1), using the
+        same walk_data[field][particle][iter] shape as the locations and
+        travel times. Unlike the grid-resampled optional variables, the
+        same value is appended at every step, and 'deposited' flips to 1
+        permanently once a particle settles. Particles from batches that
+        were not given an attribute carry None entries for it. If neither
+        particle_size nor particle_type is provided in any call, none of
+        the new keys are created and behavior is unchanged.
+
         """
         # if the values in self are invalid the input checked will catch them
         # do input type checking
@@ -684,6 +731,11 @@ class Particles():
                                                                      seed_yloc,
                                                                      seed_time,
                                                                      method)
+
+        # validate and normalize the optional per-particle attributes
+        sizes, types = validate_particle_attributes(Np_tracer,
+                                                    particle_size,
+                                                    particle_type)
 
         # validate that all seed locations fall inside the domain, as
         # out-of-bounds indices would otherwise silently wrap around the
@@ -733,6 +785,20 @@ class Particles():
         new_yinds = [[new_start_yindices[i]] for i in
                      list(range(Np_tracer))]
         new_times = [[new_start_times[i]] for i in list(range(Np_tracer))]
+
+        # persistent per-particle attribute entries for the new batch
+        # (empty when this call provides no sizes/types, so that runs
+        # without attributes never gain the new walk_data keys)
+        new_attribute_entries = dict()
+        if sizes is not None or types is not None:
+            if sizes is None:
+                sizes = [None]*Np_tracer
+            if types is None:
+                types = [None]*Np_tracer
+            new_attribute_entries = {'particle_size': [[s] for s in sizes],
+                                     'particle_type': [[t] for t in types],
+                                     'deposited': [[0] for i in
+                                                   list(range(Np_tracer))]}
 
         # establish the start values
         start_xindices = new_xinds
@@ -809,6 +875,36 @@ class Particles():
                     optional_start_vars[var] = \
                         [[0] * len(path) for path in prev_xinds] \
                         + new_var_list
+
+        # merge the persistent per-particle attributes across sources in
+        # the same order the particle histories are concatenated above
+        # (previous_walk_data + self.walk_data + new batch), padding
+        # particles without attributes with None so per-particle list
+        # lengths stay aligned with the walk history
+        attribute_sources = []
+        if previous_walk_data is not None:
+            attribute_sources.append(previous_walk_data)
+        if self.walk_data is not None:
+            attribute_sources.append(self.walk_data)
+        for var in ('particle_size', 'particle_type', 'deposited'):
+            if var not in new_attribute_entries and \
+                    not any(var in src for src in attribute_sources):
+                # no attributes anywhere for this key: a legacy run that
+                # gains none of the new walk_data keys
+                continue
+            merged = []
+            for src in attribute_sources:
+                # pad particles of sources lacking this attribute with
+                # None so per-particle list lengths stay aligned
+                merged = merged + merge_walk_attributes(src.get(var),
+                                                        src['xinds'], [])
+            if var in new_attribute_entries:
+                merged = merged + new_attribute_entries[var]
+            else:
+                # new batch is unattributed but earlier batches carry
+                # this attribute: pad the new particles with None
+                merged = merged + [[None] for i in list(range(Np_tracer))]
+            optional_start_vars[var] = merged
 
         # determine the new total number of particles we have now
         self.Np_tracer = len(start_xindices)
@@ -890,7 +986,15 @@ class Particles():
                     optional_vars[var] = self.walk_data[var]
                 else:
                     optional_vars[var] = [[None] for _ in range(self.Np_tracer)]
-        
+
+        # persistent per-particle attributes are threaded through the
+        # stepper like the optional variables when present, but unlike the
+        # grid-resampled variables their values persist from step to step
+        # (only added when present, so legacy walk data gains no new keys)
+        for var in ('particle_size', 'particle_type', 'deposited'):
+            if var in self.walk_data:
+                optional_vars[var] = self.walk_data[var]
+
         start_optional = {var: [optional_vars[var][i][-1] for i in range(self.Np_tracer)]
                         for var in optional_vars}
 
@@ -918,6 +1022,12 @@ class Particles():
                     all_times[ii].append(travel_times[ii])
                     for var in optional_vars:
                         optional_vars[var][ii].append(updated_optional[var][ii])
+                elif 'deposited' in optional_vars:
+                    # a particle that stayed put may have just settled:
+                    # update its last deposited flag in place so the flip
+                    # persists without growing the per-particle history
+                    optional_vars['deposited'][ii][-1] = \
+                        updated_optional['deposited'][ii]
                     
             # Store travel information in all_walk_data
             all_walk_data['xinds'] = all_xinds
@@ -971,6 +1081,11 @@ class Particles():
                             for var in optional_vars:
                                 optional_vars[var][ii].append(updated_optional[var][0])
                         else:
+                            if 'deposited' in optional_vars:
+                                # persist a deposition flip for a particle
+                                # that settled (and so stopped moving)
+                                optional_vars['deposited'][ii][-1] = \
+                                    updated_optional['deposited'][0]
                             break
 
                         # Use that timestep to estimate how long the
@@ -991,7 +1106,7 @@ class Particles():
             
             # write out warning if particles exceed step limit
             if (len(_iter_particles) > 0) and (self.verbose is True):
-                warnings.warn(str(len(_iter_particles)) + "Particles"
+                warnings.warn(str(len(_iter_particles)) + " Particles"
                               " exceeded iteration limit before reaching the"
                               " target time, consider using a smaller"
                               " time-step. Particles are: " +
@@ -1073,6 +1188,143 @@ def gen_input_check(Np_tracer, seed_xloc, seed_yloc, seed_time, method):
                          ' "random" or "exact".')
 
     return Np_tracer, seed_xloc, seed_yloc, seed_time
+
+
+def validate_particle_attributes(Np_tracer, particle_size, particle_type):
+    """Validate and normalize per-particle size and kind inputs.
+
+    This function does input checking for the particle_size and
+    particle_type arguments provided to
+    :obj:`dorado.particle_track.generate_particles()`. Inputs are
+    validated all-or-nothing per call: each argument is either a scalar
+    applied to all Np_tracer new particles, or a list/array of one entry
+    per new particle.
+
+    **Inputs** :
+
+        Np_tracer : `int`
+            Number of particles the attributes are being assigned to.
+
+        particle_size : `float`, `int`, `list`, `numpy.ndarray`, or `None`
+            Size value(s) to validate and coerce, or None.
+
+        particle_type : `str`, `list`, or `None`
+            Kind name(s) to validate, or None.
+
+    **Outputs** :
+
+        sizes : `list` or `None`
+            List of length Np_tracer of float sizes (or None entries), or
+            None when no sizes were provided.
+
+        types : `list` or `None`
+            List of length Np_tracer of kind names (or None entries), or
+            None when no kinds were provided.
+
+    """
+    if particle_size is None and particle_type is None:
+        return None, None
+
+    # validate the sizes: scalar applied to all particles, or one entry
+    # per particle (numpy scalars and 0-d arrays are coerced to floats)
+    if isinstance(particle_size, np.generic) or \
+            (isinstance(particle_size, np.ndarray)
+             and particle_size.ndim == 0):
+        particle_size = particle_size.item()
+    if particle_size is None:
+        sizes = [None]*Np_tracer
+    elif isinstance(particle_size, (list, tuple, np.ndarray)):
+        if len(particle_size) != Np_tracer:
+            raise ValueError('particle_size list length '
+                             + str(len(particle_size))
+                             + ' does not match the expected length of '
+                             + str(Np_tracer)
+                             + ' (Np_tracer).')
+        sizes = []
+        for s in particle_size:
+            if s is None:
+                sizes.append(None)
+            elif isinstance(s, (int, float, np.integer, np.floating)):
+                sizes.append(float(s))
+            else:
+                raise ValueError('particle_size entries must be numeric'
+                                 ' values (or None), got: ' + repr(s))
+    else:
+        try:
+            size_value = float(particle_size)
+        except (TypeError, ValueError):
+            raise ValueError('particle_size must be a number, a list/'
+                             'array of length Np_tracer, or None, got: '
+                             + repr(particle_size))
+        sizes = [size_value]*Np_tracer
+    for s in sizes:
+        if s is not None and s <= 0:
+            raise ValueError('particle_size values must be > 0, got: '
+                             + repr(s))
+
+    # validate the types: a single kind name applied to all particles, or
+    # one entry per particle, each a known key of KIND_PRESETS
+    if particle_type is None:
+        types = [None]*Np_tracer
+    elif isinstance(particle_type, str):
+        types = [particle_type]*Np_tracer
+    elif isinstance(particle_type, (list, tuple, np.ndarray)):
+        types = list(particle_type)
+        if len(types) != Np_tracer:
+            raise ValueError('particle_type list length '
+                             + str(len(types))
+                             + ' does not match the expected length of '
+                             + str(Np_tracer)
+                             + ' (Np_tracer).')
+    else:
+        raise ValueError('particle_type must be a string, a list/array of'
+                         ' strings of length Np_tracer, or None, got: '
+                         + repr(particle_type))
+    known_kinds = ', '.join(sorted(lw.KIND_PRESETS.keys()))
+    for t in types:
+        if t is None:
+            continue
+        if not isinstance(t, str):
+            raise ValueError('particle_type entries must be strings (or'
+                             ' None), got: ' + repr(t))
+        if t not in lw.KIND_PRESETS:
+            raise ValueError("Unknown particle_type '" + str(t)
+                             + "'. Known kinds are: " + known_kinds)
+
+    return sizes, types
+
+
+def merge_walk_attributes(prev_histories, prev_xinds, new_entries):
+    """Concatenate a persistent attribute's histories with new entries.
+
+    Particles from a previous walk data that did not carry this attribute
+    are padded with None entries so that per-particle list lengths stay
+    aligned with the per-particle walk history.
+
+    **Inputs** :
+
+        prev_histories : `list` or `None`
+            Per-particle attribute histories of a previous walk data, in
+            [particle][iter] shape, or None when that walk data did not
+            track this attribute.
+
+        prev_xinds : `list`
+            Per-particle walk histories (e.g. walk_data['xinds']) of that
+            previous walk data, used to size the None padding.
+
+        new_entries : `list`
+            Per-particle initial attribute entries for the new batch of
+            particles (one single-entry list per new particle).
+
+    **Outputs** :
+
+        merged : `list`
+            Concatenated per-particle attribute histories.
+
+    """
+    if prev_histories is None:
+        prev_histories = [[None]*len(p) for p in prev_xinds]
+    return prev_histories + new_entries
 
 
 def coord2ind(coordinates, raster_origin, raster_size, cellsize):

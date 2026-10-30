@@ -8,6 +8,7 @@ import sys, os
 sys.path.append(os.path.realpath(os.path.dirname(__file__)+"/.."))
 
 from dorado import particle_track
+from dorado import lagrangian_walker
 from dorado import parallel_routing
 import numpy as np
 
@@ -743,6 +744,227 @@ def test_verbose_seed_time_warning():
         pt.generate_particles(1, [1], [1], seed_time=1)
         assert not any("Particle seed time is nonzero" in str(warn.message) for warn in w)
 
+
+# ---------------------------------------------------------------------------
+# per-particle size/type attributes
+# ---------------------------------------------------------------------------
+
+def attribute_params(shape=(20, 15)):
+    """Uniform +y-flow domain used by the per-particle attribute tests."""
+    params = particle_track.modelParams()
+    params.dx = 1
+    params.depth = np.ones(shape)
+    params.stage = np.ones(shape)
+    params.qx = np.zeros(shape)
+    params.qy = np.ones(shape)
+    params.theta = 1
+    params.model = 'DeltaRCM'
+    params.verbose = False
+    return params
+
+
+def seeded_attribute_run(nparticles=3, niter=6, **gen_kwargs):
+    """Run a seeded generate_particles + run_iteration session."""
+    np.random.seed(42)
+    particle = particle_track.Particles(attribute_params())
+    particle.generate_particles(nparticles, [2, 3], [2, 3], method='exact',
+                                **gen_kwargs)
+    walk_data = None
+    for _ in range(niter):
+        walk_data = particle.run_iteration()
+    return walk_data
+
+
+def test_size_length_mismatch_raises():
+    """A particle_size list shorter than Np_tracer must raise a ValueError."""
+    with pytest.raises(ValueError, match='does not match the expected length'):
+        seeded_attribute_run(particle_size=[1.0, 2.0])
+
+
+def test_type_length_mismatch_raises():
+    """A particle_type list shorter than Np_tracer must raise a ValueError."""
+    with pytest.raises(ValueError, match='does not match the expected length'):
+        seeded_attribute_run(particle_type=['sand', 'mud'])
+
+
+def test_unknown_type_names_known_kinds():
+    """An unknown kind must raise and name the known kinds in the message."""
+    with pytest.raises(ValueError, match='Known kinds are:'):
+        seeded_attribute_run(particle_type='boulder')
+
+
+def test_nonstr_type_entries_raise():
+    """Non-string entries in a particle_type list must raise a ValueError."""
+    with pytest.raises(ValueError, match='must be strings'):
+        seeded_attribute_run(2, particle_type=['sand', 5])
+
+
+def test_attribute_histories_persist_across_iterations():
+    """Sizes/types stay constant per particle; deposited starts at 0."""
+    walk_data = seeded_attribute_run(
+        particle_size=[0.5, 2.0, 1.0],
+        particle_type=['plankton', None, None])
+    sizes = walk_data['particle_size']
+    types = walk_data['particle_type']
+    deposited = walk_data['deposited']
+    assert len(sizes) == 3
+    assert len(types) == 3
+    assert len(deposited) == 3
+    for i in range(3):
+        # one attribute entry appended per move, aligned with the walk
+        assert len(sizes[i]) == len(walk_data['xinds'][i])
+        assert set(sizes[i]) == {sizes[i][0]}
+        assert set(types[i]) == {types[i][0]}
+    assert sizes[0][0] == 0.5
+    assert sizes[1][0] == 2.0
+    assert sizes[2][0] == 1.0
+    assert types[0][0] == 'plankton'
+    assert types[1][0] is None
+    assert types[2][0] is None
+    # no deposition probability in play: the flag stays 0 everywhere
+    assert all(flag == 0 for particle in deposited for flag in particle)
+
+
+def test_mixed_batches_are_padded_with_none():
+    """Batches without attributes get None padding, lengths stay aligned."""
+    np.random.seed(0)
+    particle = particle_track.Particles(attribute_params())
+    particle.generate_particles(2, [2, 3], [2, 3], method='exact',
+                                particle_size=[1.0, 2.0])
+    particle.generate_particles(1, [2], [2], method='exact')
+    walk_data = particle.run_iteration()
+    assert len(walk_data['particle_size']) == 3
+    assert walk_data['particle_size'][0][0] == 1.0
+    assert walk_data['particle_size'][1][0] == 2.0
+    assert all(value is None for value in walk_data['particle_size'][2])
+    for i in range(3):
+        assert len(walk_data['particle_size'][i]) == len(walk_data['xinds'][i])
+        assert len(walk_data['deposited'][i]) == len(walk_data['xinds'][i])
+
+
+def test_larger_size_slows_particles_same_seed():
+    """With the same seed, size=2 moves identically but takes longer."""
+    legacy = seeded_attribute_run()
+    sized = seeded_attribute_run(particle_size=2.0)
+    # identical draw sequence -> identical trajectories
+    assert sized['xinds'] == legacy['xinds']
+    assert sized['yinds'] == legacy['yinds']
+    for new_times, old_times in zip(sized['travel_times'],
+                                    legacy['travel_times']):
+        assert len(new_times) == len(old_times)
+        # every actual move (past the 0 travel-time seed entry) is slower
+        assert all(t2 > t1 for t2, t1 in zip(new_times[1:], old_times[1:]))
+
+
+def test_smaller_size_diffuses_more():
+    """Smaller particles get a larger diffusion multiplier (1/size).
+
+    With the same seed all size runs follow identical paths (directions
+    do not depend on size), so the size-normalized per-particle total is
+    n_p(s) = B_p + E_p/s where B_p is the deterministic path cost and
+    E_p the size-invariant accumulated diffusion noise. The gap between
+    adjacent sizes therefore isolates the diffusion term: D12 = E_p and
+    D23 = E_p/2, so their variances must stand in a 4:1 ratio -- direct
+    evidence that halving the size doubles the relative diffusion.
+    (Raw travel-time spread cannot show this: it is dominated by the
+    size-squared scaling of the deterministic path cost.)
+    """
+    runs = {size: seeded_attribute_run(20, 8, particle_size=size)
+            for size in (0.5, 1.0, 2.0)}
+    assert (runs[0.5]['xinds'] == runs[1.0]['xinds'] == runs[2.0]['xinds'])
+    normalized = {size: [sum(times)/size for times in runs[size]['travel_times']]
+                  for size in (0.5, 1.0, 2.0)}
+    d12 = [a - b for a, b in zip(normalized[0.5], normalized[1.0])]
+    d23 = [a - b for a, b in zip(normalized[1.0], normalized[2.0])]
+    assert np.var(d12) > np.var(d23)
+
+
+@pytest.fixture()
+def full_deposition_kind():
+    """Register a test-only kind with deposition probability 1.0."""
+    import dorado.lagrangian_walker as lw
+    lw.KIND_PRESETS['test_settler'] = {'travel_time_multiplier': 1.0,
+                                       'diffusion_multiplier': 1.0,
+                                       'deposition_probability': 1.0}
+    yield 'test_settler'
+    del lw.KIND_PRESETS['test_settler']
+
+
+def test_deposition_stops_all_particles_first_step(full_deposition_kind):
+    """A deposition probability of 1 freezes particles on their first move."""
+    kind = full_deposition_kind
+    np.random.seed(7)
+    particle = particle_track.Particles(attribute_params())
+    particle.generate_particles(3, [2, 3], [2, 3], method='exact',
+                                particle_type=kind)
+    start_positions = [particle.walk_data['xinds'][i][0] for i in range(3)]
+    walk_data = particle.run_iteration()
+    # no particle moved away from its seed location
+    assert [walk_data['xinds'][i][-1] for i in range(3)] == start_positions
+    # every particle is now deposited
+    assert all(walk_data['deposited'][i][-1] == 1 for i in range(3))
+    # deposition is permanent: a second iteration changes nothing
+    second = particle.run_iteration()
+    assert second['xinds'] == walk_data['xinds']
+    assert all(second['deposited'][i][-1] == 1 for i in range(3))
+
+
+def test_no_attrs_run_keeps_legacy_walk_data():
+    """Runs without attributes gain no new keys and match the legacy walk."""
+    walk_data = seeded_attribute_run()
+    # no attribute keys appear on a run that passed no attributes; the
+    # only additions are the stranding columns tracked by the park
+    # default (a documented behavior change, docs/source/background)
+    assert sorted(walk_data.keys()) == ['stranded', 'stranded_time',
+                                        'travel_times', 'xinds', 'yinds']
+    # and the trajectories match the pre-change seeded result exactly
+    assert walk_data['xinds'] == [[2, 2, 1],
+                                  [3, 4, 5, 4, 4, 4, 3],
+                                  [2, 2, 2, 1]]
+    assert walk_data['yinds'] == [[2, 3, 4],
+                                  [3, 4, 5, 6, 7, 8, 9],
+                                  [2, 3, 4, 5]]
+    assert walk_data['travel_times'][0][1] == pytest.approx(0.9802683129632757)
+
+
+def test_size_one_matches_legacy_exactly():
+    """A size of exactly 1.0 reduces to the legacy formula bit-for-bit."""
+    legacy = seeded_attribute_run()
+    sized = seeded_attribute_run(particle_size=1.0)
+    assert legacy['xinds'] == sized['xinds']
+    assert legacy['yinds'] == sized['yinds']
+    assert legacy['travel_times'] == sized['travel_times']
+
+
+def test_routines_handle_attribute_walk_data():
+    """get_state and get_time_state work on walk_data with new keys."""
+    from dorado.routines import get_state, get_time_state
+    walk_data = seeded_attribute_run(particle_size=1.0)
+    state_out = get_state(walk_data)
+    assert len(state_out) == 4
+    assert state_out[3]['particle_size'] == [1.0, 1.0, 1.0]
+    time_out = get_time_state(walk_data, 1.0)
+    assert len(time_out) == 4
+    assert time_out[3]['deposited'] == [0, 0, 0]
+
+
+def test_parallel_routing_with_attributed_particles():
+    """Smoke test: parallel_routing runs with attributed particles."""
+    params = attribute_params((5, 5))
+    params.seed_xloc = [1, 2]
+    params.seed_yloc = [1, 2]
+    params.Np_tracer = 2
+    particle = particle_track.Particles(params)
+    par_result = parallel_routing.parallel_routing(particle, 3, 2, [1, 2],
+                                                   [1, 2], 2,
+                                                   particle_size=[0.5, 2.0],
+                                                   particle_type=['sand',
+                                                                  'plankton'])
+    assert len(par_result['xinds']) == 4
+    assert 'particle_size' in par_result
+    assert 'deposited' in par_result
+
+
 def test_verbose_run_iteration_warning():
     """A particle that exceeds the iteration limit before reaching the
     target time must trip the warning, whatever its position in the
@@ -864,8 +1086,13 @@ def test_params_uv_and_lists_not_mutated():
     assert 'roi_flag' in particle.particle_variables
 
 
-def test_gamma_out_of_range_warns_and_clamps():
-    """gamma outside [0, 1] must warn, clamp, and keep weights >= 0."""
+def test_gamma_out_of_range_raises():
+    """gamma outside [0, 1] must raise ValueError instead of corrupting picks.
+
+    Review probe (F3): gamma = 1.5 produced negative weights, a
+    non-monotonic cumulative distribution, and 43.5% of picks landing
+    on a single invalid cell with no warning of any kind.
+    """
     params = particle_track.modelParams()
     params.dx = 1.
     params.model = 'DeltaRCM'
@@ -874,19 +1101,14 @@ def test_gamma_out_of_range_warns_and_clamps():
     params.stage = np.tile(np.linspace(1.0, 0.9, 5), (5, 1))
     params.qx = np.zeros((5, 5))
     params.qy = np.ones((5, 5))
-    params.verbose = True
 
     params.gamma = 1.5
-    with pytest.warns(Warning, match='[Gg]amma'):
-        particle = particle_track.Particles(params)
-    assert particle.gamma == 1.0
-    assert particle.weight.min() >= 0
+    with pytest.raises(ValueError, match='[Gg]amma'):
+        particle_track.Particles(params)
 
     params.gamma = -0.2
-    with pytest.warns(Warning, match='[Gg]amma'):
-        particle = particle_track.Particles(params)
-    assert particle.gamma == 0.0
-    assert particle.weight.min() >= 0
+    with pytest.raises(ValueError, match='[Gg]amma'):
+        particle_track.Particles(params)
 
 
 def test_cell_type_none_falls_back_to_estimation():
@@ -922,4 +1144,87 @@ def test_velocity_floor_preserves_sign():
     # pointing with the flow instead of rotating ~126 degrees
     assert particle.u[2, 2] < 0
     assert particle.velocity_angle[2, 2] > 0
+
+
+def test_stepper_freezes_out_of_domain_step():
+    """A step off an all-water domain must freeze, not record a wrap.
+
+    Review probe (F1): a particle sitting on a border cell of a domain
+    with no -1 edge markers has an all-zero weight row, so random_pick
+    deterministically returns slot 0 (NW) and steps to a negative row;
+    nothing bounds-checked the result.
+    """
+    params = particle_track.modelParams()
+    params.dx = 1.
+    params.model = 'DeltaRCM'
+    params.depth = np.ones((6, 6))
+    params.stage = np.ones((6, 6))
+    params.qx = np.zeros((6, 6))
+    params.qy = np.ones((6, 6))
+    params.cell_type = np.zeros((6, 6))  # water everywhere: no -1 edges
+    particle = particle_track.Particles(params)
+    new_inds, travel_times, _ = lagrangian_walker.particle_stepper(
+        particle, [[0, 2]], [0.], {})
+    assert new_inds[0] == [0, 2]
+    assert 0 <= new_inds[0][0] < 6
+    assert 0 <= new_inds[0][1] < 6
+
+
+def test_water_bordered_domain_no_escape():
+    """Particles must never walk off a water-bordered domain.
+
+    Regression for review finding F1 (the 498/500 seeded-escape probe):
+    on a 6x6 all-water domain with stage sloped downhill-outward,
+    unpatched code let particles march through the rim into negative
+    indices, where every downstream lookup wrapped silently and
+    corrupted the spatial statistics.
+    """
+    params = particle_track.modelParams()
+    params.dx = 1.
+    params.model = 'DeltaRCM'
+    params.depth = np.ones((6, 6))
+    params.qx = np.zeros((6, 6))
+    params.qy = np.ones((6, 6))
+    params.cell_type = np.zeros((6, 6))  # all water: no -1 edge markers
+    params.gamma = 1.0  # pure stage-gradient walk, drifts outward
+    ii, jj = np.meshgrid(np.arange(6), np.arange(6), indexing='ij')
+    # high center, falling off toward every edge: downhill-outward
+    params.stage = 2.0 - 0.25 * (np.abs(ii - 2.5) + np.abs(jj - 2.5))
+    particle = particle_track.Particles(params)
+    np.random.seed(0)
+    particle.generate_particles(500, [3] * 500, [3] * 500)
+    walk = {}
+    for _ in range(8):
+        walk = particle.run_iteration()
+    for path in walk['xinds'] + walk['yinds']:
+        assert min(path) >= 0
+        assert max(path) < 6
+
+
+def test_over_limit_warning_message():
+    """The over-limit warning fires once with a correct, readable count.
+
+    Review probe (F10): the warning read '1Particles' (missing space)
+    and the count could miss earlier overflowers entirely.
+    """
+    params = particle_track.modelParams()
+    params.dx = 1.
+    params.model = 'DeltaRCM'
+    params.depth = np.ones((60, 60))
+    params.stage = np.ones((60, 60))
+    params.qx = np.zeros((60, 60))
+    params.qy = np.ones((60, 60))
+    # gamma = 0: the walk follows the discharge field only, so the
+    # particle always steps E/NE/SE (stay and uphill slots carry zero
+    # weight) and drifts east from the center. The rim sits 29 cells
+    # away while max_iter caps the run at 26 steps: the particle can
+    # neither reach the target time nor park, so it must overflow.
+    params.gamma = 0.0
+    particle = particle_track.Particles(params)
+    np.random.seed(3)
+    particle.generate_particles(1, [30], [30])
+    with pytest.warns(Warning, match=r'\d+ Particles exceeded') as record:
+        particle.run_iteration(target_time=1e9, max_iter=25)
+    assert len(record) == 1
+    assert '1 Particles exceeded' in str(record[0].message)
 

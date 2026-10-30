@@ -94,3 +94,8 @@ Lower-level functionality is provided in the :download:`particle_track.py <../..
 * Assorted functions for transforming from real coordinate systems to the raster domain used for the particle routing
 
 For additional detail, either view the script itself :download:`particle_track.py <../../../dorado/particle_track.py>`, or refer to the API documentation: :ref:`particletrack`.
+
+.. toctree::
+   :maxdepth: 1
+
+   particle_sizes_types
