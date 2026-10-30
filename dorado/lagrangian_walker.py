@@ -135,9 +135,9 @@ def clear_borders(tiled_array):
 
     **Outputs** :
 
-        tiled_array : `ndarray`
-            The same 3D array as the input, but with the borders
-            in the first and second dimension set to 0.
+        None :
+            The input `tiled_array` is modified in place, with the
+            borders in the first and second dimension set to 0.
 
     """
     tiled_array[0,:,:] = 0.
@@ -368,10 +368,13 @@ def calc_travel_times(Particles, new_cell, ind, new_ind, dist):
 
 
 def check_for_boundary(new_inds, current_inds, cell_type):
-    """Ensure new location is not a boundary cell.
+    """Keep particles bordering a boundary cell from moving.
 
-    Function to make sure particle is not exiting the boundary with the
-    proposed new location.
+    Function to check the neighborhood of each particle's current
+    location for boundary (edge) cells, and to cancel the proposed
+    movement of any particle whose current location borders one, so
+    that particles at the edge of the domain remain where they are
+    for this iteration.
 
     **Inputs** :
 

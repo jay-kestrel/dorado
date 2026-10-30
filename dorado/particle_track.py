@@ -705,7 +705,7 @@ class Particles():
         # if there is no walk data raise an error
         if self.walk_data is None:
             raise ValueError('Particles have not been initialized.'
-                             ' Call the `particle_generator()` function.')
+                             ' Call the `generate_particles()` function.')
 
         all_walk_data = dict()  # init all_walk_data dictionary
 
