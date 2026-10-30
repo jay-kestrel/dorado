@@ -17,7 +17,6 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import os
 import platform
 import subprocess
 import sys
@@ -91,6 +90,26 @@ def jsonable(value):
     return value
 
 
+def walk_data_bytes(walk_data: dict) -> bytes:
+    """Serialize walk data exactly as the on-disk reference output.
+
+    Shared by main() and the harness's in-process parity gate so both compare
+    the same bytes the port binaries write (no trailing newline, as on disk).
+    """
+    return json.dumps(jsonable(walk_data), allow_nan=False).encode()
+
+
+def resolve_seed_box(field: str, seed_x_csv: str | None,
+                     seed_y_csv: str | None) -> tuple[list[int], list[int]]:
+    """Resolve seeding indices: CSV overrides per axis, default box otherwise."""
+    if field not in SEED_BOXES and (seed_x_csv is None or seed_y_csv is None):
+        raise ValueError(f"unknown fixture '{field}': pass --seed-x/--seed-y explicitly")
+    default_x, default_y = SEED_BOXES.get(field, ([], []))
+    seed_x = [int(v) for v in seed_x_csv.split(",")] if seed_x_csv else list(default_x)
+    seed_y = [int(v) for v in seed_y_csv.split(",")] if seed_y_csv else list(default_y)
+    return seed_x, seed_y
+
+
 def appended_steps(walk_data: dict) -> int:
     return sum(len(path) - 1 for path in walk_data["xinds"])
 
@@ -152,22 +171,17 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--particles and --iterations must be positive")
 
     field = args.input.resolve().name.removeprefix("fixture_")
-    if args.seed_x is None or args.seed_y is None:
-        if field not in SEED_BOXES:
-            parser.error(f"unknown fixture '{field}': pass --seed-x/--seed-y explicitly")
-        default_x, default_y = SEED_BOXES[field]
-        seed_x = ([int(v) for v in args.seed_x.split(",")] if args.seed_x else default_x)
-        seed_y = ([int(v) for v in args.seed_y.split(",")] if args.seed_y else default_y)
-    else:
-        seed_x = [int(v) for v in args.seed_x.split(",")]
-        seed_y = [int(v) for v in args.seed_y.split(",")]
+    try:
+        seed_x, seed_y = resolve_seed_box(field, args.seed_x, args.seed_y)
+    except ValueError as err:
+        parser.error(str(err))
 
     walk_data, seconds = run_reference(params, seed, particles, iterations, seed_x, seed_y)
     moved = appended_steps(walk_data)
 
     args.out.mkdir(parents=True, exist_ok=True)
     walk_path = args.out / "walk_data.json"
-    walk_path.write_bytes(json.dumps(jsonable(walk_data), allow_nan=False).encode())
+    walk_path.write_bytes(walk_data_bytes(walk_data))
     report = metadata(args.input, manifest, particles, iterations, seed, seconds, moved)
     timing_path = args.out / "timing.json"
     timing_path.write_bytes((json.dumps(report, indent=2, allow_nan=False) + "\n").encode())
