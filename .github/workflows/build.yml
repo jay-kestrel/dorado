@@ -22,6 +22,8 @@ jobs:
       PYTHON: ${{ matrix.python-version }}
     steps:
     - uses: actions/checkout@v4
+    - name: Set up Rust (maturin builds the native extension)
+      uses: dtolnay/rust-toolchain@stable
     - name: Set up Python ${{ matrix.python-version }}
       uses: actions/setup-python@v5
       with:
@@ -58,6 +60,8 @@ jobs:
       PYTHON: ${{ matrix.python-version }}
     steps:
     - uses: actions/checkout@v4
+    - name: Set up Rust (maturin builds the native extension)
+      uses: dtolnay/rust-toolchain@stable
     - name: Set up Python ${{ matrix.python-version }}
       uses: actions/setup-python@v5
       with:
@@ -103,6 +107,8 @@ jobs:
       uses: actions/checkout@v4
       with:
         persist-credentials: false
+    - name: Set up Rust (maturin builds the native extension)
+      uses: dtolnay/rust-toolchain@stable
     - name: Set up Python 3.11.0
       uses: actions/setup-python@v5
       with:
