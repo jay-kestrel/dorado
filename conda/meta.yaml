@@ -21,6 +21,10 @@ requirements:
   host:
     - python >=3.11
     - pip
+    # conda-build runs pip without build isolation, so the PEP 517 backend
+    # must be present in the host env
+    - setuptools
+    - setuptools_scm
   run:
     - python >=3.11
     - numpy
