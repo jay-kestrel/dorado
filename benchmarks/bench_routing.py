@@ -24,10 +24,10 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-import numpy as np  # noqa: E402
+import numpy as np
 
-from dorado import lagrangian_walker as lw  # noqa: E402
-from dorado.particle_track import Particles, modelParams  # noqa: E402
+from dorado import lagrangian_walker as lw
+from dorado.particle_track import Particles, modelParams
 
 
 @dataclass

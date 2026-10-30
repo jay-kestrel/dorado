@@ -28,9 +28,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-import numpy as np  # noqa: E402
+import numpy as np
 
-from dorado.particle_track import Particles, modelParams  # noqa: E402
+from dorado.particle_track import Particles, modelParams
 
 # Default seeding regions per field, following example_data/define_params.py
 # and the seed rows/columns of the routing benchmark table.

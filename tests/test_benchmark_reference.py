@@ -22,7 +22,7 @@ def run_runner(tmp_path: Path, fixture: str, *extra: str) -> Path:
     proc = subprocess.run(
         [sys.executable, str(RUNNER), "--input", str(ROOT / "bench" / f"fixture_{fixture}"),
          "--out", str(out), *extra],
-        cwd=ROOT, capture_output=True, text=True)
+        check=False, cwd=ROOT, capture_output=True, text=True)
     assert proc.returncode == 0, proc.stderr
     return out
 
