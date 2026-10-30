@@ -140,6 +140,7 @@ jobs:
         uv run --no-sync python examples/traveltime_straight_channel.py
         uv run --no-sync python examples/nourishment_example.py
         uv run --no-sync python examples/particle_sizes_types.py
+        uv run --no-sync python examples/traveltime_seeding_strategies.py
         cd examples
         uv run --no-sync python unsteady_example.py
 
