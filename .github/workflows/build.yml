@@ -69,6 +69,14 @@ jobs:
     - name: Install dorado
       run: |
         pip install -e .
+    - name: Benchmark routing smoke test
+      run: python benchmarks/bench_routing.py --quick --output benchmark-quick.json
+    - name: Upload routing benchmark
+      uses: actions/upload-artifact@v4
+      with:
+        name: routing-benchmark-${{ matrix.os }}-${{ matrix.python-version }}
+        path: benchmark-quick.json
+        if-no-files-found: error
     - name: Run examples
       run: |
         python examples/steady_anuga_particles.py
