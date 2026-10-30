@@ -48,10 +48,11 @@ Optional fields and their defaults (each defaulting decision is logged at INFO):
 Seeding particles
 -----------------
 
-``Particles.generate_particles(Np_tracer, seed_xloc, seed_yloc, seed_time=0, method='random', previous_walk_data=None)``:
+``Particles.generate_particles(Np_tracer, seed_xloc, seed_yloc, seed_time=0, method='random', previous_walk_data=None, particle_size=None, particle_type=None)``:
 
 - ``method='random'`` distributes the requested number of particles across the seed lists by weighted random draw (``random_pick_seed``); ``method='exact'`` places particles at the defined locations.
 - Inputs are validated by ``gen_input_check``; seed locations are validated against the domain bounds and out-of-bounds seeds raise ``ValueError`` rather than silently wrapping around the domain edges via negative indexing.
+- ``particle_size`` and ``particle_type`` attach per-particle behavior attributes (see *Per-particle kinds and sizes* below); each accepts a single value applied to all newly generated particles or a list/array with one entry per particle, validated all-or-nothing per call — mixing a scalar with a list of the wrong length raises ``ValueError`` stating the expected and received lengths, and unknown kind names raise ``ValueError`` listing the known kinds.
 - Successive calls append to the same ``walk_data``, so particles can be seeded in several groupings before routing; ``previous_walk_data`` folds in independent walk data (e.g. loaded from a ``.json`` file), indexed ``[field][particle][iteration]``.
 
 Stepping semantics
@@ -78,6 +79,18 @@ For a move of Euclidean distance ``dist`` from cell ``o`` to cell ``i``:
 - The diffusion term ``diff = (0.5 − U(0,1)) × diff_coeff`` is a uniform draw in ``[−dc/2, +dc/2]``, re-introducing diffusivity lost to the gridded scheme.
 - A particle that does not move accrues no travel time.
 
+Per-particle kinds and sizes
+----------------------------
+
+By default every routed particle is an identical passive tracer. Optionally, ``generate_particles`` accepts a numeric ``particle_size`` (> 0) and/or a named ``particle_type`` (a *kind*, a key of ``KIND_PRESETS`` in ``lagrangian_walker.py``; shipped presets: ``sand``, ``mud``, ``plankton`` with travel-time, diffusion, and deposition multipliers):
+
+- Each step, the kind's ``travel_time_multiplier`` scales the computed travel time, its ``diffusion_multiplier`` scales the diffusion term, and its ``deposition_probability`` is the per-step chance the particle settles permanently.
+- Deposition is permanent: a deposited particle stops moving for the rest of the run and its ``'deposited'`` walk_data flag stays 1.
+- A size without a kind scales travel time by the size (bigger = slower) and the diffusion term by ``1/size`` (smaller = more diffusion). When both a size and a kind are given, the size and preset multipliers multiply and the deposition probability comes from the preset.
+- Unlike the optional variables re-sampled from the grid at every step, these attributes are *persistent*: the same per-particle value is appended to ``walk_data`` at every step, under the keys ``particle_size``, ``particle_type``, and the derived ``deposited`` flag. Batches generated without an attribute carry ``None`` entries so histories stay aligned when batches are merged.
+- If no ``particle_size`` or ``particle_type`` is provided in any ``generate_particles`` call, none of the new walk_data keys are created and behavior is exactly the passive-tracer random walk.
+- All particles in one ``Particles`` object share the routing weight field; heterogeneity comes from these per-particle behavior modifiers, not from separate per-kind weight fields. For user-facing usage, see :ref:`particle_sizes_types`.
+
 The ``walk_data`` schema
 ------------------------
 
@@ -87,6 +100,7 @@ The ``walk_data`` schema
 - Each value is a nested list indexed ``[particle][iteration]``, e.g. ``walk_data['travel_times'][5][10]`` is the travel time of the 5th particle at the 10th iteration.
 - Positions are stored as grid indices; convert with ``coord2ind``/``ind2coord``.
 - Tracked optional variables (from ``modelParams.particle_variables``) appear as additional keys with the same shape; a variable with no recorded value yet is ``[[None]]`` per particle.
+- When particles were generated with a size and/or kind, the persistent attribute keys ``particle_size``, ``particle_type``, and ``deposited`` appear with the same shape (see *Per-particle kinds and sizes* above).
 - ``clear_walk_data()`` resets the attribute to ``None``.
 
 Randomness and reproducibility
@@ -98,6 +112,7 @@ Assumptions and limitations
 ---------------------------
 
 - Particles are point quantities located at cell centers; the gridded placement loses travel-time accuracy, which is partly compensated by the ``diff_coeff`` term.
+- Without per-particle attributes every particle is an identical passive tracer; kinds and sizes modify per-particle transport behavior but do not change the shared weight field or the D-8 move distribution itself.
 - The grid is rectangular with square cells; unstructured model output must first be interpolated onto the grid (``unstruct2grid`` helps).
 - Only depth, stage, discharge, and velocity fields are consumed; the package holds no state between runs beyond ``walk_data``.
 - Velocities are floored at ``1e-8``: cells with (near-)zero velocity have very large, but finite, travel times rather than infinite ones.

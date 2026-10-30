@@ -64,6 +64,14 @@ For additional installation options and instructions, refer to the [installation
 
 The legacy `verbose` parameter is deprecated and maps onto the logger; prefer the options above. See the [logging guide](docs/source/userguide/index.rst) and the [`dorado.logging_config` API reference](docs/source/apiref/loggingconfig.rst) for details.
 
+## Command-line interface
+
+Installing the package exposes a `pydorado` console command with three subcommands built on the standard library only:
+
+- `pydorado info` — package, Python, and dependency versions plus the bundled example-data files; it never imports the routing code.
+- `pydorado validate` — map the arrays in an `.npz` file onto `dorado.particle_track.modelParams` following the example-data conventions and run them through `Particles` as the validator.
+- `pydorado demo` — a short seeded routing run on a bundled example field.
+
 ## Benchmarks
 
 The routing kernel is timed by the harness in [`benchmarks/`](benchmarks/README.md), whose `--quick` mode runs in CI on every pull request. See the harness README for the workloads, the timing contract, and how to run the full benchmark.
