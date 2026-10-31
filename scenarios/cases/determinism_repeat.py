@@ -6,6 +6,13 @@ RNG before generating particles). Byte-identical walk-data hashes across
 repeats are the assertion — and the tripwire: any future change to
 routing behavior surfaces here first.
 
+Reproducibility is backend-aware: the default native backend draws its
+per-particle ChaCha8 streams from the ``seed`` constructor argument, not
+the global RNG (``np.random.seed`` alone does not reproduce a rust-backend
+walk), so the seed is passed through explicitly here. Under the Python
+backend the argument is ignored and the re-seeded global stream drives
+the walk — identical hashes either way.
+
 The record's processed counters describe repeat 0. Per-repeat routing
 times live in the phases (routing_r0..rR); the timing_cv field is the
 population std/mean of those times (mean and spread are recoverable
@@ -88,7 +95,7 @@ def run(quick: bool = False, seed: int = 0) -> dict[str, object]:
     for repeat in range(repeats):
         np.random.seed(seed)  # identical stream for every repeat
         with clock.timed("seeding"), memory.sample():
-            particles = pt.Particles(params)
+            particles = pt.Particles(params, seed=seed)
             particles.generate_particles(parcels, SEED_X, SEED_Y)
         phase = f"routing_r{repeat}"
         if repeat == 0:
