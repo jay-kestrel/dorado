@@ -124,6 +124,135 @@ def random_pick_seed(choices, probs=None):
 
     return choices[idx]
 
+# Neighbor (di, dj) offsets in the [NW, N, NE, W, center, E, SW, S, SE]
+# channel order shared by big_sliding_window, tile_local_array, and the
+# fused weight builders (make_weight, make_weight_subsurface).
+D8_OFFSETS = ((-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 0),
+              (0, 1), (1, -1), (1, 0), (1, 1))
+
+
+def _d8_weights_from_velocity(u, v, dist, jvec, ivec, blocked, out):
+    """Project a flow vector field onto the D8 channels and normalize.
+
+    Shared construction for every weight builder that routes on a
+    flow-vector field (discharge for the surface builder, pore velocity
+    for the subsurface builder): the raw weight of channel k at cell
+    (i, j) is the projection of the flow vector onto that channel's
+    unit direction, per unit distance. Non-positive projections cannot
+    receive flow and are zeroed, as are neighbor cells rejected by the
+    ``blocked`` rule. Each cell's 9 channels are then normalized to a
+    distribution wherever their sum is positive, so the output is a
+    well-formed draw for :obj:`random_pick`. Cells whose channels all
+    vanish (no positive projection) keep an all-zero row.
+
+    Only the interior cells of ``out`` are written; border channels are
+    left untouched (builders either clear them or leave them zero by
+    construction).
+
+    **Inputs** :
+
+        u : `ndarray`
+            2D (L, W) field of the flow component along the first axis
+            (the component moved by the jwalk channels).
+
+        v : `ndarray`
+            2D (L, W) field of the flow component along the second axis
+            (the component moved by the iwalk channels).
+
+        dist : `ndarray`
+            Raveled (9,) D8 distances.
+
+        jvec : `ndarray`
+            Raveled (9,) D8 unit-vector components along the first axis.
+
+        ivec : `ndarray`
+            Raveled (9,) D8 unit-vector components along the second axis.
+
+        blocked : `callable` or `None`
+            Optional rule mapping a channel index k to a boolean (L, W)
+            plane marking neighbor cells that cannot receive flow (the
+            surface builder blocks too-shallow or land neighbors).
+
+        out : `ndarray`
+            (L, W, 9) volume whose interior channels receive the raw
+            projections and are normalized in place.
+
+    **Outputs** :
+
+        None :
+            ``out`` is modified in place.
+
+    """
+    L, W = u.shape
+    norm = np.zeros((L, W))
+    for k in range(9):
+        w = out[1:-1, 1:-1, k]
+        np.multiply(u[1:-1, 1:-1], jvec[k], out=w)
+        w += v[1:-1, 1:-1] * ivec[k]
+        w /= dist[k]
+        w[w <= 0] = 0
+        if blocked is not None:
+            w[blocked(k)] = 0
+        norm[1:-1, 1:-1] += np.where(np.isnan(w), 0.0, w)
+
+    # normalize in place, exactly where the per-cell sum is positive
+    for k in range(9):
+        w = out[1:-1, 1:-1, k]
+        ni = norm[1:-1, 1:-1]
+        np.divide(w, ni, out=w, where=ni > 0)
+
+
+def calc_velocity_state(u, v):
+    """Derive velocity magnitude and orientation with the house clamp rules.
+
+    Shared derivation for every routing domain: the velocity magnitude
+    used by :obj:`calc_travel_times` cannot hold 0 or NaN (infinite or
+    NaN travel times), so magnitudes below 1e-8 are floored; the
+    component fields are floored too, preserving the sign of tiny
+    negative values so the velocity angle keeps pointing along the flow
+    direction (exact zeros keep the historical positive floor). The
+    magnitude is computed from the inputs BEFORE the component floors,
+    matching the derivation the surface fields have used historically.
+
+    **Inputs** :
+
+        u : `ndarray`
+            2D (L, W) field of the flow component along the first axis.
+
+        v : `ndarray`
+            2D (L, W) field of the flow component along the second axis.
+
+    **Outputs** :
+
+        u : `ndarray`
+            The component field with tiny magnitudes floored.
+
+        v : `ndarray`
+            The component field with tiny magnitudes floored.
+
+        velocity : `ndarray`
+            2D (L, W) field of velocity magnitude, floored at 1e-8.
+
+        velocity_angle : `ndarray`
+            2D (L, W) field of velocity orientation, arctan2(-u, v).
+
+    """
+    # cannot have 0/nans - leads to infinite/nan travel times
+    velocity = np.sqrt(u**2 + v**2)
+    velocity[velocity < 1e-8] = 1e-8
+    # floor tiny velocities to avoid 0/nans, preserving the sign of
+    # tiny negative values so that the velocity angle keeps pointing
+    # along the flow direction (exact zeros keep the historical
+    # positive floor)
+    tiny_u = np.abs(u) < 1e-8
+    u = np.where(tiny_u, (np.sign(u) + (u == 0.0))*1e-8, u)
+    tiny_v = np.abs(v) < 1e-8
+    v = np.where(tiny_v, (np.sign(v) + (v == 0.0))*1e-8, v)
+    # Compute velocity orientation at each cell
+    velocity_angle = np.arctan2(-1.0*u, v)
+
+    return u, v, velocity, velocity_angle
+
 
 def big_sliding_window(raster):
     """Creates 3D array organizing local neighbors at every index
@@ -274,10 +403,7 @@ def make_weight(Particles):
     gamma = Particles.gamma
     park = Particles.stranding_handling == 'park'
 
-    # neighbor (di, dj) offsets in the [NW, N, NE, W, center, E, SW, S, SE]
-    # channel order shared by big_sliding_window and tile_local_array
-    offsets = ((-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 0),
-               (0, 1), (1, -1), (1, 0), (1, 1))
+    offsets = D8_OFFSETS
 
     def shifted(field, k):
         # interior view of `field` shifted by channel k's offset: the value
@@ -296,7 +422,6 @@ def make_weight(Particles):
     # ever materializes (the old chain peaked at ~1.1 GB on 1000x2000 grids)
     weight = np.zeros((L, W, 9))
     norm_sfc = np.zeros((L, W))
-    norm_int = np.zeros((L, W))
 
     # pass 1: raw surface-gradient components and their per-cell sums;
     # NaN (from NaN fields) is skipped in the sums exactly like nansum
@@ -308,21 +433,10 @@ def make_weight(Particles):
         w[dry_or_land(k)] = 0
         norm_sfc[1:-1, 1:-1] += np.where(np.isnan(w), 0.0, w)
 
-    # pass 2: raw inertial components and their per-cell sums
-    for k in range(9):
-        w = weight[1:-1, 1:-1, k]
-        np.multiply(qx[1:-1, 1:-1], jvec[k], out=w)
-        w += qy[1:-1, 1:-1] * ivec[k]
-        w /= dist[k]
-        w[w <= 0] = 0
-        w[dry_or_land(k)] = 0
-        norm_int[1:-1, 1:-1] += np.where(np.isnan(w), 0.0, w)
-
-    # normalize both components in place, exactly where their sum is positive
-    for k in range(9):
-        w = weight[1:-1, 1:-1, k]
-        ni = norm_int[1:-1, 1:-1]
-        np.divide(w, ni, out=w, where=ni > 0)
+    # pass 2: raw inertial components and their per-cell normalization,
+    # via the construction shared with the subsurface weight builder
+    _d8_weights_from_velocity(qx, qy, dist, jvec, ivec,
+                              blocked=dry_or_land, out=weight)
 
     # pass 3: blend the normalized components and apply the depth^theta
     # weighting, recomputing the surface component channel-by-channel

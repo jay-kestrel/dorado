@@ -682,23 +682,11 @@ class Particles():
                                  " Specify velocities/discharge")
 
         # Define field of velocity magnitude (for travel time calculation)
-        self.velocity = np.sqrt(self.u**2+self.v**2)
-        # cannot have 0/nans - leads to infinite/nantravel times
-        self.velocity[self.velocity < 1e-8] = 1e-8
-        # floor tiny velocities to avoid 0/nans, preserving the sign of
-        # tiny negative values so that the velocity angle keeps pointing
-        # along the flow direction (exact zeros keep the historical
-        # positive floor)
-        tiny_u = np.abs(self.u) < 1e-8
-        self.u = np.where(tiny_u,
-                          (np.sign(self.u) + (self.u == 0.0))*1e-8,
-                          self.u)
-        tiny_v = np.abs(self.v) < 1e-8
-        self.v = np.where(tiny_v,
-                          (np.sign(self.v) + (self.v == 0.0))*1e-8,
-                          self.v)
-        # Compute velocity orientation at each cell
-        self.velocity_angle = np.arctan2(-1.0*self.u, self.v)
+        # and orientation via the shared walker derivation, which applies
+        # the same clamp rules the subsurface fields use
+        (self.u, self.v,
+         self.velocity, self.velocity_angle) = lw.calc_velocity_state(self.u,
+                                                                      self.v)
 
         # OPTIONAL PARAMETERS (Have default values) #
         # Define the theta used to weight the random walk
