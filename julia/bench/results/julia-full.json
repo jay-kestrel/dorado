@@ -1,0 +1,187 @@
+{
+  "metadata": {
+    "julia": "1.11.7",
+    "logical_cpus": 8,
+    "machine": "x86_64",
+    "normalization": "attempted particle-steps, including frozen particles",
+    "platform": "x86_64-linux-gnu",
+    "revision": "df863fc13094fd8c7e47d41c370f10871eba6735",
+    "routing_source_sha256": {
+      "npy.jl": "60e4bb1e11b63f715acafa7a4381f267a5ae601efc5b9d3b2a1b3039235a30cd",
+      "particles.jl": "1a6b96ea40b46aa7de6b605589513fdcc637c3c8f4072cf10ddf3a7674d7509a",
+      "state.jl": "a7e05e4d552e120f8bb9ebd6c98b50fd15ec16324ce3e5b80e4761306e8f024f",
+      "walker.jl": "47f25ff49c8e84491daec72a75bab75025e70b5ad0ee8a383b1d8115c2fac3ce",
+      "weights.jl": "88b4f6d204e1f1496785d6e99a70e618c4ebdfe8ef32a3f33605040f685d735f"
+    },
+    "state_reset": "deepcopy staged particles outside timing",
+    "thread_environment": {
+      "JULIA_NUM_THREADS": "1"
+    },
+    "timed_region": "run_iteration only",
+    "timer": "time_ns",
+    "timestamp_utc": "2026-10-30T21:07:29.923",
+    "warmup_iterations": "full route (one untimed pass over the workload's step count)",
+    "warmup_note": "Julia compiles per-specialization; the warmup route covers every specialization the timed region touches",
+    "working_tree_dirty": true
+  },
+  "results": [
+    {
+      "appended_steps": [
+        10000,
+        10000,
+        10000
+      ],
+      "backend": "julia",
+      "dx": 50.0,
+      "median_seconds": 0.007211572,
+      "microseconds_per_particle_step": 0.7211572,
+      "n_threads": 1,
+      "particles": 500,
+      "repeats": 3,
+      "seconds": [
+        0.006377241,
+        0.007211572,
+        0.00742112
+      ],
+      "seed": 0,
+      "shape": [
+        120,
+        240
+      ],
+      "steps": 20,
+      "workload": "rcm"
+    },
+    {
+      "appended_steps": [
+        50000,
+        50000,
+        50000
+      ],
+      "backend": "julia",
+      "dx": 50.0,
+      "median_seconds": 0.054872854,
+      "microseconds_per_particle_step": 1.09745708,
+      "n_threads": 1,
+      "particles": 2500,
+      "repeats": 3,
+      "seconds": [
+        0.054872854,
+        0.049386189,
+        0.076257919
+      ],
+      "seed": 0,
+      "shape": [
+        120,
+        240
+      ],
+      "steps": 20,
+      "workload": "rcm"
+    },
+    {
+      "appended_steps": [
+        100000,
+        100000,
+        100000
+      ],
+      "backend": "julia",
+      "dx": 50.0,
+      "median_seconds": 0.084264038,
+      "microseconds_per_particle_step": 0.84264038,
+      "n_threads": 1,
+      "particles": 5000,
+      "repeats": 3,
+      "seconds": [
+        0.076742332,
+        0.084264038,
+        0.11367158
+      ],
+      "seed": 0,
+      "shape": [
+        120,
+        240
+      ],
+      "steps": 20,
+      "workload": "rcm"
+    },
+    {
+      "appended_steps": [
+        25000,
+        25000,
+        25000
+      ],
+      "backend": "julia",
+      "dx": 10.0,
+      "median_seconds": 0.017489367,
+      "microseconds_per_particle_step": 0.6995746799999999,
+      "n_threads": 1,
+      "particles": 500,
+      "repeats": 3,
+      "seconds": [
+        0.017489367,
+        0.025010585,
+        0.016286194
+      ],
+      "seed": 0,
+      "shape": [
+        100,
+        100
+      ],
+      "steps": 50,
+      "workload": "anuga"
+    },
+    {
+      "appended_steps": [
+        125000,
+        125000,
+        125000
+      ],
+      "backend": "julia",
+      "dx": 10.0,
+      "median_seconds": 0.120883526,
+      "microseconds_per_particle_step": 0.9670682079999999,
+      "n_threads": 1,
+      "particles": 2500,
+      "repeats": 3,
+      "seconds": [
+        0.111840203,
+        0.221843119,
+        0.120883526
+      ],
+      "seed": 0,
+      "shape": [
+        100,
+        100
+      ],
+      "steps": 50,
+      "workload": "anuga"
+    },
+    {
+      "appended_steps": [
+        250000,
+        250000,
+        250000
+      ],
+      "backend": "julia",
+      "dx": 10.0,
+      "median_seconds": 0.353125618,
+      "microseconds_per_particle_step": 1.412502472,
+      "n_threads": 1,
+      "particles": 5000,
+      "repeats": 3,
+      "seconds": [
+        0.353125618,
+        0.363417127,
+        0.339089172
+      ],
+      "seed": 0,
+      "shape": [
+        100,
+        100
+      ],
+      "steps": 50,
+      "workload": "anuga"
+    }
+  ],
+  "schema_version": 1,
+  "skipped": []
+}

@@ -1,0 +1,355 @@
+{
+  "schema_version": 1,
+  "metadata": {
+    "timestamp_utc": "2026-10-30T21:03:47.039466+00:00",
+    "revision": "df863fc13094fd8c7e47d41c370f10871eba6735",
+    "working_tree_dirty": true,
+    "routing_source_sha256": {
+      "particle_track.py": "02fa1ad3836eac96465e1f30d78f9f17e8b7dc008b7ebfa5075a50f681926819",
+      "lagrangian_walker.py": "fbe0eaf42fb39fba37f905384eac5a2afb71cf583824367896e452e3c909d3cb"
+    },
+    "python": "3.13.14",
+    "numpy": "2.3.5",
+    "platform": "Linux-6.1.158+-x86_64-with-glibc2.41",
+    "machine": "x86_64",
+    "processor": "",
+    "logical_cpus": 8,
+    "timer": "time.perf_counter",
+    "timed_region": "run_iteration only",
+    "warmup_iterations": 1,
+    "state_reset": "deepcopy staged particles and reset RNG outside timing",
+    "normalization": "attempted particle-steps, including frozen particles",
+    "thread_environment": {
+      "OMP_NUM_THREADS": null,
+      "OPENBLAS_NUM_THREADS": null,
+      "MKL_NUM_THREADS": null
+    }
+  },
+  "skipped": [],
+  "results": [
+    {
+      "workload": "rcm",
+      "shape": [
+        120,
+        240
+      ],
+      "dx": 50.0,
+      "data_sha256": "f22611244ea87af19b86d6659e70aca42ba961a401ff6fd0a5ec94af8b68dad3",
+      "backend": "python",
+      "particles": 500,
+      "steps": 20,
+      "repeats": 3,
+      "seed": 0,
+      "n_threads": 1,
+      "seconds": [
+        0.16786735400000907,
+        0.16739955999992162,
+        0.21649796400015475
+      ],
+      "median_seconds": 0.16786735400000907,
+      "microseconds_per_particle_step": 16.786735400000907,
+      "appended_steps": [
+        10000,
+        10000,
+        10000
+      ]
+    },
+    {
+      "workload": "rcm",
+      "shape": [
+        120,
+        240
+      ],
+      "dx": 50.0,
+      "data_sha256": "f22611244ea87af19b86d6659e70aca42ba961a401ff6fd0a5ec94af8b68dad3",
+      "backend": "numpy",
+      "particles": 500,
+      "steps": 20,
+      "repeats": 3,
+      "seed": 0,
+      "n_threads": 1,
+      "seconds": [
+        0.018900905000009516,
+        0.01878431900013311,
+        0.01790400399977443
+      ],
+      "median_seconds": 0.01878431900013311,
+      "microseconds_per_particle_step": 1.878431900013311,
+      "appended_steps": [
+        10000,
+        10000,
+        10000
+      ]
+    },
+    {
+      "workload": "rcm",
+      "shape": [
+        120,
+        240
+      ],
+      "dx": 50.0,
+      "data_sha256": "f22611244ea87af19b86d6659e70aca42ba961a401ff6fd0a5ec94af8b68dad3",
+      "backend": "python",
+      "particles": 2500,
+      "steps": 20,
+      "repeats": 3,
+      "seed": 0,
+      "n_threads": 1,
+      "seconds": [
+        0.8291706479999448,
+        0.8381824929997492,
+        0.8476449190002313
+      ],
+      "median_seconds": 0.8381824929997492,
+      "microseconds_per_particle_step": 16.763649859994985,
+      "appended_steps": [
+        50000,
+        50000,
+        50000
+      ]
+    },
+    {
+      "workload": "rcm",
+      "shape": [
+        120,
+        240
+      ],
+      "dx": 50.0,
+      "data_sha256": "f22611244ea87af19b86d6659e70aca42ba961a401ff6fd0a5ec94af8b68dad3",
+      "backend": "numpy",
+      "particles": 2500,
+      "steps": 20,
+      "repeats": 3,
+      "seed": 0,
+      "n_threads": 1,
+      "seconds": [
+        0.08156382399965878,
+        0.11519098799999483,
+        0.08329287799961094
+      ],
+      "median_seconds": 0.08329287799961094,
+      "microseconds_per_particle_step": 1.6658575599922187,
+      "appended_steps": [
+        50000,
+        50000,
+        50000
+      ]
+    },
+    {
+      "workload": "rcm",
+      "shape": [
+        120,
+        240
+      ],
+      "dx": 50.0,
+      "data_sha256": "f22611244ea87af19b86d6659e70aca42ba961a401ff6fd0a5ec94af8b68dad3",
+      "backend": "python",
+      "particles": 5000,
+      "steps": 20,
+      "repeats": 3,
+      "seed": 0,
+      "n_threads": 1,
+      "seconds": [
+        1.8090267070001573,
+        1.7501768789998096,
+        1.8323220509996645
+      ],
+      "median_seconds": 1.8090267070001573,
+      "microseconds_per_particle_step": 18.090267070001573,
+      "appended_steps": [
+        100000,
+        100000,
+        100000
+      ]
+    },
+    {
+      "workload": "rcm",
+      "shape": [
+        120,
+        240
+      ],
+      "dx": 50.0,
+      "data_sha256": "f22611244ea87af19b86d6659e70aca42ba961a401ff6fd0a5ec94af8b68dad3",
+      "backend": "numpy",
+      "particles": 5000,
+      "steps": 20,
+      "repeats": 3,
+      "seed": 0,
+      "n_threads": 1,
+      "seconds": [
+        0.19802004600023793,
+        0.16017933000011908,
+        0.19638116900023306
+      ],
+      "median_seconds": 0.19638116900023306,
+      "microseconds_per_particle_step": 1.9638116900023306,
+      "appended_steps": [
+        100000,
+        100000,
+        100000
+      ]
+    },
+    {
+      "workload": "anuga",
+      "shape": [
+        100,
+        100
+      ],
+      "dx": 10.0,
+      "data_sha256": "d558513c1e9d5d8f0ab070a07cc0a8e259cdaa4df532f35bf816b1b1b5a49ce4",
+      "backend": "python",
+      "particles": 500,
+      "steps": 50,
+      "repeats": 3,
+      "seed": 0,
+      "n_threads": 1,
+      "seconds": [
+        0.4154063949999909,
+        0.4126619399999072,
+        0.4170437549996677
+      ],
+      "median_seconds": 0.4154063949999909,
+      "microseconds_per_particle_step": 16.616255799999635,
+      "appended_steps": [
+        25000,
+        25000,
+        25000
+      ]
+    },
+    {
+      "workload": "anuga",
+      "shape": [
+        100,
+        100
+      ],
+      "dx": 10.0,
+      "data_sha256": "d558513c1e9d5d8f0ab070a07cc0a8e259cdaa4df532f35bf816b1b1b5a49ce4",
+      "backend": "numpy",
+      "particles": 500,
+      "steps": 50,
+      "repeats": 3,
+      "seed": 0,
+      "n_threads": 1,
+      "seconds": [
+        0.042132859000048484,
+        0.04242484699989291,
+        0.04282631100022627
+      ],
+      "median_seconds": 0.04242484699989291,
+      "microseconds_per_particle_step": 1.6969938799957163,
+      "appended_steps": [
+        25000,
+        25000,
+        25000
+      ]
+    },
+    {
+      "workload": "anuga",
+      "shape": [
+        100,
+        100
+      ],
+      "dx": 10.0,
+      "data_sha256": "d558513c1e9d5d8f0ab070a07cc0a8e259cdaa4df532f35bf816b1b1b5a49ce4",
+      "backend": "python",
+      "particles": 2500,
+      "steps": 50,
+      "repeats": 3,
+      "seed": 0,
+      "n_threads": 1,
+      "seconds": [
+        2.1834890449999875,
+        2.2447441580002305,
+        2.3978881079997336
+      ],
+      "median_seconds": 2.2447441580002305,
+      "microseconds_per_particle_step": 17.957953264001844,
+      "appended_steps": [
+        125000,
+        125000,
+        125000
+      ]
+    },
+    {
+      "workload": "anuga",
+      "shape": [
+        100,
+        100
+      ],
+      "dx": 10.0,
+      "data_sha256": "d558513c1e9d5d8f0ab070a07cc0a8e259cdaa4df532f35bf816b1b1b5a49ce4",
+      "backend": "numpy",
+      "particles": 2500,
+      "steps": 50,
+      "repeats": 3,
+      "seed": 0,
+      "n_threads": 1,
+      "seconds": [
+        0.2401644229998965,
+        0.2389090930000748,
+        0.24137651799992454
+      ],
+      "median_seconds": 0.2401644229998965,
+      "microseconds_per_particle_step": 1.921315383999172,
+      "appended_steps": [
+        125000,
+        125000,
+        125000
+      ]
+    },
+    {
+      "workload": "anuga",
+      "shape": [
+        100,
+        100
+      ],
+      "dx": 10.0,
+      "data_sha256": "d558513c1e9d5d8f0ab070a07cc0a8e259cdaa4df532f35bf816b1b1b5a49ce4",
+      "backend": "python",
+      "particles": 5000,
+      "steps": 50,
+      "repeats": 3,
+      "seed": 0,
+      "n_threads": 1,
+      "seconds": [
+        4.673399103000065,
+        5.104062655999769,
+        4.701484583000365
+      ],
+      "median_seconds": 4.701484583000365,
+      "microseconds_per_particle_step": 18.80593833200146,
+      "appended_steps": [
+        250000,
+        250000,
+        250000
+      ]
+    },
+    {
+      "workload": "anuga",
+      "shape": [
+        100,
+        100
+      ],
+      "dx": 10.0,
+      "data_sha256": "d558513c1e9d5d8f0ab070a07cc0a8e259cdaa4df532f35bf816b1b1b5a49ce4",
+      "backend": "numpy",
+      "particles": 5000,
+      "steps": 50,
+      "repeats": 3,
+      "seed": 0,
+      "n_threads": 1,
+      "seconds": [
+        0.4921185670000341,
+        0.46198598299997684,
+        0.5184954779997497
+      ],
+      "median_seconds": 0.4921185670000341,
+      "microseconds_per_particle_step": 1.9684742680001364,
+      "appended_steps": [
+        250000,
+        250000,
+        250000
+      ]
+    }
+  ]
+}

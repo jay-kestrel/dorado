@@ -1,0 +1,77 @@
+{
+  "schema_version": 1,
+  "metadata": {
+    "timestamp_utc": "2026-10-30T21:05:04.430701+00:00",
+    "revision": "df863fc13094fd8c7e47d41c370f10871eba6735",
+    "working_tree_dirty": true,
+    "routing_source_sha256": {
+      "particle_track.py": "02fa1ad3836eac96465e1f30d78f9f17e8b7dc008b7ebfa5075a50f681926819",
+      "lagrangian_walker.py": "fbe0eaf42fb39fba37f905384eac5a2afb71cf583824367896e452e3c909d3cb"
+    },
+    "python": "3.13.14",
+    "numpy": "2.3.5",
+    "platform": "Linux-6.1.158+-x86_64-with-glibc2.41",
+    "machine": "x86_64",
+    "processor": "",
+    "logical_cpus": 8,
+    "timer": "time.perf_counter",
+    "timed_region": "run_iteration only",
+    "warmup_iterations": 1,
+    "state_reset": "deepcopy staged particles and reset RNG outside timing",
+    "normalization": "attempted particle-steps, including frozen particles",
+    "thread_environment": {
+      "OMP_NUM_THREADS": null,
+      "OPENBLAS_NUM_THREADS": null,
+      "MKL_NUM_THREADS": null
+    }
+  },
+  "skipped": [],
+  "results": [
+    {
+      "workload": "anuga",
+      "shape": [
+        100,
+        100
+      ],
+      "dx": 10.0,
+      "data_sha256": "d558513c1e9d5d8f0ab070a07cc0a8e259cdaa4df532f35bf816b1b1b5a49ce4",
+      "backend": "python",
+      "particles": 500,
+      "steps": 3,
+      "repeats": 1,
+      "seed": 0,
+      "n_threads": 1,
+      "seconds": [
+        0.02554073300007076
+      ],
+      "median_seconds": 0.02554073300007076,
+      "microseconds_per_particle_step": 17.027155333380506,
+      "appended_steps": [
+        1500
+      ]
+    },
+    {
+      "workload": "anuga",
+      "shape": [
+        100,
+        100
+      ],
+      "dx": 10.0,
+      "data_sha256": "d558513c1e9d5d8f0ab070a07cc0a8e259cdaa4df532f35bf816b1b1b5a49ce4",
+      "backend": "numpy",
+      "particles": 500,
+      "steps": 3,
+      "repeats": 1,
+      "seed": 0,
+      "n_threads": 1,
+      "seconds": [
+        0.003225524999834306
+      ],
+      "median_seconds": 0.003225524999834306,
+      "microseconds_per_particle_step": 2.1503499998895372,
+      "appended_steps": [
+        1500
+      ]
+    }
+  ]
+}
