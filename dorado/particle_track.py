@@ -757,7 +757,10 @@ class Particles():
         # access, so try/except would let it slip through and crash later
         # in the weight calculations)
         if getattr(params, 'cell_type', None) is not None:
-            self.cell_type = params.cell_type
+            # copy so in-place edits here or downstream (the native
+            # snapshot stages this array as a zero-copy view when it is
+            # already int8) can never reach the caller's array
+            self.cell_type = np.array(params.cell_type, copy=True)
         else:
             logger.info("Cell Types not specified - Estimating from depth")
             self.cell_type = np.zeros_like(self.depth, dtype='int')
@@ -798,7 +801,10 @@ class Particles():
         # Define distances between cells in D8 sense (guard on None --
         # a None value does not raise on attribute access)
         if getattr(params, 'distances', None) is not None:
-            self.distances = params.distances
+            # copy so the walker and the native snapshot (staged later as
+            # zero-copy views when dtype/layout match) never alias the
+            # caller's arrays
+            self.distances = np.array(params.distances, copy=True)
         else:
             # defined if not given
             logger.info("params.distances not provided - using D8 defaults")
@@ -809,7 +815,7 @@ class Particles():
         # D8 components of x-unit vector (guard on None -- a None value
         # does not raise on attribute access)
         if getattr(params, 'ivec', None) is not None:
-            self.ivec = params.ivec
+            self.ivec = np.array(params.ivec, copy=True)
         else:
             # defined if not given
             logger.info("params.ivec not provided - using D8 defaults")
@@ -820,7 +826,7 @@ class Particles():
         # D8 components of y-unit vector (guard on None -- a None value
         # does not raise on attribute access)
         if getattr(params, 'jvec', None) is not None:
-            self.jvec = params.jvec
+            self.jvec = np.array(params.jvec, copy=True)
         else:
             # defined if not given
             logger.info("params.jvec not provided - using D8 defaults")
@@ -831,7 +837,7 @@ class Particles():
         # Positive/Negative x-directions (guard on None -- a None value
         # does not raise on attribute access)
         if getattr(params, 'iwalk', None) is not None:
-            self.iwalk = params.iwalk
+            self.iwalk = np.array(params.iwalk, copy=True)
         else:
             # defined if not given
             logger.info("params.iwalk not provided - using D8 defaults")
@@ -842,7 +848,7 @@ class Particles():
         # Positive/Negative y-directions (guard on None -- a None value
         # does not raise on attribute access)
         if getattr(params, 'jwalk', None) is not None:
-            self.jwalk = params.jwalk
+            self.jwalk = np.array(params.jwalk, copy=True)
         else:
             # defined if not given
             logger.info("params.jwalk not provided - using D8 defaults")
@@ -853,7 +859,7 @@ class Particles():
         # Angles of D8 step directions (guard on None -- a None value
         # does not raise on attribute access)
         if getattr(params, 'angles', None) is not None:
-            self.angles = params.angles
+            self.angles = np.array(params.angles, copy=True)
         else:
             # defined if not given
             logger.info("params.angles not provided - using D8 defaults")
@@ -868,7 +874,9 @@ class Particles():
                                 " does not match model grid shape " +
                                 str(self.depth.shape) +
                                 ". roi_grid must be the same shape as the depth array.")
-            self.roi_grid = params.roi_grid
+            # copy so in-place edits here or downstream can never reach
+            # the caller's grid
+            self.roi_grid = np.array(params.roi_grid, copy=True)
             logger.info("roi provided and stored in the particle object.")
         else:
             self.roi_grid = None

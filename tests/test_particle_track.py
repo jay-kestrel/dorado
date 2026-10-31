@@ -1162,6 +1162,116 @@ def test_params_uv_and_lists_not_mutated():
     assert 'roi_flag' in particle.particle_variables
 
 
+def test_supplied_grids_and_geometry_are_copies():
+    """User-supplied cell_type/roi_grid/D8 geometry must be stored as copies.
+
+    The native snapshot stages these arrays as zero-copy views when dtype
+    and layout already match, so storing them by reference would let
+    caller-side mutation leak into the supposedly immutable routing state.
+    """
+    params = particle_track.modelParams()
+    params.dx = 1.
+    params.model = 'DeltaRCM'
+    params.depth = np.ones((5, 5))
+    params.stage = np.ones((5, 5))
+    params.qx = np.zeros((5, 5))
+    params.qy = np.ones((5, 5))
+    params.cell_type = np.ones((5, 5), dtype='int')
+    params.cell_type[0, :] = -1  # edge ring, as the estimator would pad
+    params.cell_type[:, 0] = -1
+    params.cell_type[:, -1] = -1
+    params.cell_type[-1, :] = -1
+    params.roi_grid = np.ones((5, 5))
+    params.distances = np.array([[sqrt(2), 1, sqrt(2)],
+                                 [1, 1, 1],
+                                 [sqrt(2), 1, sqrt(2)]])
+    params.ivec = np.array([[-sqrt(.5), 0, sqrt(.5)],
+                            [-1, 0, 1],
+                            [-sqrt(.5), 0, sqrt(.5)]])
+    params.jvec = np.array([[-sqrt(.5), -1, -sqrt(.5)],
+                            [0, 0, 0],
+                            [sqrt(.5), 1, sqrt(.5)]])
+    params.iwalk = np.array([[-1, 0, 1], [-1, 0, 1], [-1, 0, 1]])
+    params.jwalk = np.array([[-1, -1, -1], [0, 0, 0], [1, 1, 1]])
+    params.angles = np.array([[3*pi/4, pi/2, pi/4],
+                              [pi, 0, 0],
+                              [5*pi/4, 3*pi/2, 7*pi/4]])
+
+    particle = particle_track.Particles(params)
+
+    for attr in ('cell_type', 'roi_grid', 'distances', 'ivec', 'jvec',
+                 'iwalk', 'jwalk', 'angles'):
+        assert not np.shares_memory(getattr(params, attr),
+                                    getattr(particle, attr)), attr
+        assert np.array_equal(getattr(particle, attr),
+                              getattr(params, attr)), attr
+
+
+def test_walk_unaffected_by_params_mutation_after_init():
+    """Mutating caller-owned arrays after construction must not alter the walk.
+
+    copy-on-init regression (the spec's enabling fix): unsteady runs rebuild
+    Particles from the same modelParams object, and the native snapshot is
+    staged lazily on the first routed iteration - aliased arrays would let
+    post-construction edits flow into routing state mid-run.
+    """
+    def build():
+        p = particle_track.modelParams()
+        p.dx = 1.
+        p.model = 'DeltaRCM'
+        p.depth = np.ones((5, 5))
+        p.depth[0, 0] = 0.
+        p.stage = np.tile(np.linspace(1., 0.9, 5), (5, 1))
+        p.qx = np.zeros((5, 5))
+        p.qy = np.full((5, 5), 0.1)
+        p.cell_type = np.ones((5, 5), dtype='int')
+        p.cell_type[0, :] = -1
+        p.cell_type[:, 0] = -1
+        p.cell_type[:, -1] = -1
+        p.cell_type[-1, :] = -1
+        p.roi_grid = np.ones((5, 5))
+        p.particle_variables = ['depth']
+        p.distances = np.array([[sqrt(2), 1, sqrt(2)],
+                                [1, 1, 1],
+                                [sqrt(2), 1, sqrt(2)]])
+        p.ivec = np.array([[-sqrt(.5), 0, sqrt(.5)],
+                           [-1, 0, 1],
+                           [-sqrt(.5), 0, sqrt(.5)]])
+        p.jvec = np.array([[-sqrt(.5), -1, -sqrt(.5)],
+                           [0, 0, 0],
+                           [sqrt(.5), 1, sqrt(.5)]])
+        p.iwalk = np.array([[-1, 0, 1], [-1, 0, 1], [-1, 0, 1]])
+        p.jwalk = np.array([[-1, -1, -1], [0, 0, 0], [1, 1, 1]])
+        p.angles = np.array([[3*pi/4, pi/2, pi/4],
+                             [pi, 0, 0],
+                             [5*pi/4, 3*pi/2, 7*pi/4]])
+        return p
+
+    def walk(sabotage):
+        params = build()
+        particle = particle_track.Particles(params, seed=0)
+        particle.generate_particles(4, [1, 2], [1, 2], method='exact')
+        if sabotage:
+            # every caller-owned array, mutated in place before the first
+            # routed iteration stages the native snapshot
+            params.depth[2, 2] = 0.
+            params.stage[2, 2] = 42.
+            params.qx[2, 2] = 77.
+            params.qy[2, 2] = -77.
+            params.cell_type[2, 2] = 2
+            params.roi_grid[2, 2] = 0
+            params.distances[0, 0] = 99.
+            params.iwalk[0, 0] = 5
+            params.jwalk[0, 0] = 5
+            params.angles[0, 0] = 42.
+        particle.run_iteration()
+        particle.run_iteration()
+        particle.run_iteration()
+        return particle.walk_data
+
+    assert walk(sabotage=True) == walk(sabotage=False)
+
+
 def test_gamma_out_of_range_raises():
     """gamma outside [0, 1] must raise ValueError instead of corrupting picks.
 
