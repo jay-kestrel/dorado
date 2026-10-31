@@ -122,6 +122,57 @@ class modelParams:
             this amount, so it acts as the stranding clock. Must be > 0.
             Default value is 1.0.
 
+        gw_qx : `numpy.ndarray`
+            Array of the x-component of groundwater discharge per unit
+            width [L^2/T], driving the optional subsurface domain. This
+            is the component along the first (row) axis of the model
+            grid, in the same handedness as the DeltaRCM surface
+            convention -- unlike the surface discharge fields,
+            groundwater inputs are used as given and never swapped.
+            Provided together with `gw_qy` as one forcing form; cannot
+            be combined with `gw_u`/`gw_v`. Requires `porosity`.
+
+        gw_qy : `numpy.ndarray`
+            Array of the y-component of groundwater discharge per unit
+            width [L^2/T]: the component along the second (column) axis
+            of the model grid.
+
+        gw_u : `numpy.ndarray`
+            Array of the x-component of groundwater pore velocity [L/T],
+            an alternative forcing form to `gw_qx`/`gw_qy`. Provided
+            together with `gw_v` as one forcing form.
+
+        gw_v : `numpy.ndarray`
+            Array of the y-component of groundwater pore velocity [L/T].
+
+        porosity : `float` or `numpy.ndarray`
+            Effective porosity n_e in (0, 1], converting groundwater
+            discharge to pore velocity (v = q / n_e). Required when
+            `gw_qx`/`gw_qy` are given; unused with `gw_u`/`gw_v`. A 2D
+            array must match the model grid shape.
+
+        aquifer_mask : `numpy.ndarray`
+            Boolean (L, W) array marking where a subsurface domain
+            exists. Cells outside the mask are immobile rock; the mask
+            edge acts as an exfiltration boundary. Defaults to True
+            everywhere the groundwater fields are defined.
+
+        p_infiltration : `float`
+            Per-step probability in [0, 1] of a surface particle
+            infiltrating into the subsurface domain. Default 0.0.
+
+        residence_time_mean : `float`
+            Mean [T] of the exponential residence-time distribution
+            drawn when a particle infiltrates. Must be > 0.
+
+        storage_dt : `float`
+            Model time [T] booked for every step a buried particle
+            spends in storage. Must be > 0. Default 1.0.
+
+        p_resurface : `float`
+            Per-step probability in [0, 1] of an underground particle
+            exfiltrating back to the surface. Default 0.0.
+
         cell_type : `numpy.ndarray`
             Array of the different types of cells in the domain where 2 = land,
             1 = channel, 0 = ocean, and -1 = edge. If not explicitly defined
@@ -161,6 +212,17 @@ class modelParams:
         self.qy = None
         self.u = None
         self.v = None
+        # optional subsurface transport inputs (see the class docstring)
+        self.gw_qx = None
+        self.gw_qy = None
+        self.gw_u = None
+        self.gw_v = None
+        self.porosity = None
+        self.aquifer_mask = None
+        self.p_infiltration = None
+        self.residence_time_mean = None
+        self.storage_dt = None
+        self.p_resurface = None
 
 
 def check_stranding_params(params):
@@ -240,6 +302,184 @@ def check_stranding_params(params):
             'rest_time': rest_time,
             'entrain_prob': entrain_prob,
             'stranding_dt': stranding_dt}
+
+def check_subsurface_params(params, domain_shape):
+    """Parse and validate the optional subsurface transport parameters.
+
+    Reads the optional groundwater/exchange parameters from a params
+    object, applies defaults, validates the configuration, and derives
+    the pore-velocity fields the walker consumes. Returns None when no
+    subsurface input is present at all, so a plain surface run sees no
+    subsurface machinery. Exchange scalars without a groundwater
+    forcing form are accepted silently: the subsurface domain they
+    configure is a valid immobile storage mode (buried particles do
+    not move), not a misconfiguration -- only an out-of-range or
+    inconsistent value itself raises.
+
+    **Inputs** :
+
+        params : :obj:`dorado.particle_track.modelParams`
+            A :obj:`dorado.particle_track.modelParams` object, carrying
+            any subset of the subsurface parameters (gw_qx, gw_qy,
+            gw_u, gw_v, porosity, aquifer_mask, p_infiltration,
+            residence_time_mean, storage_dt, p_resurface).
+
+        domain_shape : `tuple`
+            Shape of the surface domain (the depth array's shape);
+            every subsurface grid must match it.
+
+    **Outputs** :
+
+        subsurface : `dict` or `None`
+            None when no subsurface parameter is set. Otherwise a
+            dictionary with the validated gw_u/gw_v pore-velocity
+            fields (None in storage mode), porosity, aquifer_mask
+            (bool array, defaulting to all True), and the exchange
+            scalars p_infiltration, residence_time_mean, storage_dt,
+            p_resurface.
+
+    """
+    gw_qx = getattr(params, 'gw_qx', None)
+    gw_qy = getattr(params, 'gw_qy', None)
+    gw_u = getattr(params, 'gw_u', None)
+    gw_v = getattr(params, 'gw_v', None)
+    porosity = getattr(params, 'porosity', None)
+    aquifer_mask = getattr(params, 'aquifer_mask', None)
+    p_infiltration = getattr(params, 'p_infiltration', None)
+    residence_time_mean = getattr(params, 'residence_time_mean', None)
+    storage_dt = getattr(params, 'storage_dt', None)
+    p_resurface = getattr(params, 'p_resurface', None)
+
+    has_discharge = gw_qx is not None or gw_qy is not None
+    has_velocity = gw_u is not None or gw_v is not None
+    has_forcing = has_discharge or has_velocity
+    configured = (has_forcing or porosity is not None
+                  or aquifer_mask is not None
+                  or p_infiltration is not None
+                  or residence_time_mean is not None
+                  or storage_dt is not None or p_resurface is not None)
+    if not configured:
+        return None
+
+    def _check_grid(name, arr):
+        # subsurface grids must sit exactly on the surface domain
+        if arr.shape != tuple(domain_shape):
+            raise ValueError(name + " shape " + str(arr.shape)
+                             + " does not match model grid shape "
+                             + str(tuple(domain_shape)) + ". " + name
+                             + " must be the same shape as the depth array.")
+        return arr
+
+    def _probability(value, name):
+        # per-step exchange probability, like entrain_prob but closed
+        if value is None:
+            return None
+        try:
+            value = float(value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(name + " must be a number in [0, 1], got: "
+                             + str(value)) from exc
+        if np.isnan(value) or not (0 <= value <= 1):
+            raise ValueError(name + " must be in [0, 1], got: "
+                             + str(value))
+        return value
+
+    def _positive(value, name):
+        # positive time-like scalar (an exponential mean, or a clock)
+        try:
+            value = float(value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(name + " must be a number > 0, got: "
+                             + str(value)) from exc
+        if np.isnan(value) or value <= 0:
+            raise ValueError(name + " must be > 0, got: " + str(value))
+        return value
+
+    # exactly one complete forcing form: discharge or pore velocity
+    if has_discharge and not (gw_qx is not None and gw_qy is not None):
+        raise ValueError("gw_qx and gw_qy must be provided together as"
+                         " one forcing form; a lone component cannot"
+                         " drive the subsurface walk")
+    if has_velocity and not (gw_u is not None and gw_v is not None):
+        raise ValueError("gw_u and gw_v must be provided together as"
+                         " one forcing form; a lone component cannot"
+                         " drive the subsurface walk")
+    if has_discharge and has_velocity:
+        raise ValueError("Provide exactly one subsurface forcing form:"
+                         " groundwater discharge (gw_qx, gw_qy) or pore"
+                         " velocity (gw_u, gw_v), not both")
+
+    # pore velocity: discharge converted with the effective porosity
+    if has_discharge and porosity is None:
+        raise ValueError("porosity is required when groundwater discharge"
+                         " (gw_qx, gw_qy) is given: pore velocity is"
+                         " v = q / ne")
+    if porosity is not None:
+        porosity = np.asarray(porosity, dtype=np.float64)
+        if porosity.ndim == 0:
+            porosity = float(porosity)
+            if np.isnan(porosity) or not (0 < porosity <= 1):
+                raise ValueError("porosity must be in (0, 1], got: "
+                                 + str(porosity))
+        else:
+            _check_grid("porosity", porosity)
+            if (not np.all((porosity > 0) & (porosity <= 1))):
+                raise ValueError("porosity values must all be in (0, 1],"
+                                 " got range [" + str(np.nanmin(porosity))
+                                 + ", " + str(np.nanmax(porosity)) + "]")
+
+    if has_discharge:
+        # copy so the NaN cleanup below never reaches the caller's array;
+        # pore velocity [L/T] = discharge per unit width [L^2/T] / n_e [-]
+        gw_u = _check_grid("gw_qx", np.asarray(gw_qx)).copy()
+        gw_u[np.isnan(gw_u)] = 0
+        gw_v = _check_grid("gw_qy", np.asarray(gw_qy)).copy()
+        gw_v[np.isnan(gw_v)] = 0
+        gw_u = gw_u/porosity
+        gw_v = gw_v/porosity
+    elif has_velocity:
+        gw_u = _check_grid("gw_u", np.asarray(gw_u)).copy()
+        gw_u[np.isnan(gw_u)] = 0
+        gw_v = _check_grid("gw_v", np.asarray(gw_v)).copy()
+        gw_v[np.isnan(gw_v)] = 0
+    else:
+        # storage mode: no groundwater forcing, buried particles are
+        # immobile and only the exchange scalars apply
+        gw_u = None
+        gw_v = None
+
+    if aquifer_mask is not None:
+        # view as bool (0/1 int masks are accepted), copied on conversion
+        aquifer_mask = _check_grid("aquifer_mask",
+                                   np.asarray(aquifer_mask)).astype(bool)
+    elif has_forcing:
+        # default: the aquifer extends everywhere the fields are defined
+        aquifer_mask = np.ones(domain_shape, dtype=bool)
+    else:
+        aquifer_mask = None
+
+    p_infiltration = _probability(p_infiltration, "p_infiltration")
+    if p_infiltration is None:
+        p_infiltration = 0.0
+    p_resurface = _probability(p_resurface, "p_resurface")
+    if p_resurface is None:
+        p_resurface = 0.0
+    if storage_dt is None:
+        storage_dt = 1.0
+    else:
+        storage_dt = _positive(storage_dt, "storage_dt")
+    if residence_time_mean is not None:
+        residence_time_mean = _positive(residence_time_mean,
+                                        "residence_time_mean")
+
+    return {'gw_u': gw_u,
+            'gw_v': gw_v,
+            'porosity': porosity,
+            'aquifer_mask': aquifer_mask,
+            'p_infiltration': p_infiltration,
+            'residence_time_mean': residence_time_mean,
+            'storage_dt': storage_dt,
+            'p_resurface': p_resurface}
 
 
 # Valid routing backends. 'rust' routes iterations through the native
@@ -682,23 +922,11 @@ class Particles():
                                  " Specify velocities/discharge")
 
         # Define field of velocity magnitude (for travel time calculation)
-        self.velocity = np.sqrt(self.u**2+self.v**2)
-        # cannot have 0/nans - leads to infinite/nantravel times
-        self.velocity[self.velocity < 1e-8] = 1e-8
-        # floor tiny velocities to avoid 0/nans, preserving the sign of
-        # tiny negative values so that the velocity angle keeps pointing
-        # along the flow direction (exact zeros keep the historical
-        # positive floor)
-        tiny_u = np.abs(self.u) < 1e-8
-        self.u = np.where(tiny_u,
-                          (np.sign(self.u) + (self.u == 0.0))*1e-8,
-                          self.u)
-        tiny_v = np.abs(self.v) < 1e-8
-        self.v = np.where(tiny_v,
-                          (np.sign(self.v) + (self.v == 0.0))*1e-8,
-                          self.v)
-        # Compute velocity orientation at each cell
-        self.velocity_angle = np.arctan2(-1.0*self.u, self.v)
+        # and orientation via the shared walker derivation, which applies
+        # the same clamp rules the subsurface fields use
+        (self.u, self.v,
+         self.velocity, self.velocity_angle) = lw.calc_velocity_state(self.u,
+                                                                      self.v)
 
         # OPTIONAL PARAMETERS (Have default values) #
         # Define the theta used to weight the random walk
@@ -889,6 +1117,30 @@ class Particles():
 
         # initialize routing weights array
         lw.make_weight(self)
+
+        # SUBSURFACE PARAMETERS (all optional; see check_subsurface_params)
+        # Scalars carry their safe defaults (no exchange, storage clock of
+        # 1.0) so the exchange rules degrade to no-ops when the feature is
+        # unused; the fields and volumes stay None, and the object routes
+        # exactly as before (zero-diff contract).
+        sub = check_subsurface_params(params, self.depth.shape)
+        sub = sub if sub is not None else {}
+        self.gw_u = sub.get('gw_u', None)
+        self.gw_v = sub.get('gw_v', None)
+        self.porosity = sub.get('porosity', None)
+        self.aquifer_mask = sub.get('aquifer_mask', None)
+        self.p_infiltration = sub.get('p_infiltration', 0.0)
+        self.residence_time_mean = sub.get('residence_time_mean', None)
+        self.storage_dt = sub.get('storage_dt', 1.0)
+        self.p_resurface = sub.get('p_resurface', 0.0)
+        # subsurface routing volumes: an all-zero storage volume when only
+        # exchange scalars are set, a groundwater-driven D8 volume in
+        # field mode, and nothing (None) when the feature is unused
+        self.weight_sub = None
+        self.velocity_sub = None
+        self.velocity_angle_sub = None
+        if sub:
+            lw.make_weight_subsurface(self)
 
         # -------------------------------------------------------
         # Define additional variables to track with particle movement (beyond xinds, yinds, and travel_times)
