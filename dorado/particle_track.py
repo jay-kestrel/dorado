@@ -1133,10 +1133,14 @@ class Particles():
         self.residence_time_mean = sub.get('residence_time_mean', None)
         self.storage_dt = sub.get('storage_dt', 1.0)
         self.p_resurface = sub.get('p_resurface', 0.0)
-        # subsurface routing volumes: built by make_weight_subsurface
+        # subsurface routing volumes: an all-zero storage volume when only
+        # exchange scalars are set, a groundwater-driven D8 volume in
+        # field mode, and nothing (None) when the feature is unused
         self.weight_sub = None
         self.velocity_sub = None
         self.velocity_angle_sub = None
+        if sub:
+            lw.make_weight_subsurface(self)
 
         # -------------------------------------------------------
         # Define additional variables to track with particle movement (beyond xinds, yinds, and travel_times)

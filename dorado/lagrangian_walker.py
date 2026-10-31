@@ -540,6 +540,77 @@ def get_weight(Particles, ind):
     return new_cell
 
 
+def make_weight_subsurface(Particles):
+    """Create the subsurface routing weight array for particle routing.
+
+    Function to compute the subsurface routing weights at each index,
+    stored as :obj:`weight_sub` on the
+    :obj:`dorado.particle_track.Particles` object next to the surface
+    weights. Called when the object gets instantiated with any
+    subsurface parameter set.
+
+    The volume follows the same (L, W, 9) D8 contract as the surface
+    weights, but routes purely on the groundwater flow vector: there is
+    no stage-gradient component, no depth bias, and no hydrodynamic
+    model axis swap -- groundwater components are used as given, with
+    the x-component along the first (row) axis, in the same handedness
+    as the DeltaRCM surface convention. Neighbors beyond the aquifer
+    mask stay reachable from inside: crossing the mask edge is the
+    exfiltration pathway, so only the rows of cells outside the mask
+    (buried rock) are zeroed.
+
+    In storage mode -- exchange scalars without any groundwater forcing
+    form -- the volume is all zeros: buried particles have no mobile
+    neighbor and only the exchange rules apply.
+
+    **Inputs** :
+
+        Particles : :obj:`dorado.particle_track.Particles`
+            A :obj:`dorado.particle_track.Particles` object with the
+            validated subsurface fields (gw_u/gw_v pore velocity,
+            aquifer_mask) already ingested.
+
+    **Outputs** :
+
+        Updates the weight_sub, velocity_sub, and velocity_angle_sub
+        arrays inside the :obj:`dorado.particle_track.Particles` object
+
+    """
+    L, W = Particles.depth.shape
+
+    if Particles.gw_u is None:
+        # storage mode: no groundwater forcing, immobile storage domain
+        Particles.weight_sub = np.zeros((L, W, 9))
+        Particles.velocity_sub = None
+        Particles.velocity_angle_sub = None
+        return
+
+    # float64 views of the pore-velocity fields
+    u = np.asarray(Particles.gw_u, dtype=np.float64)
+    v = np.asarray(Particles.gw_v, dtype=np.float64)
+
+    weight = np.zeros((L, W, 9))
+    _d8_weights_from_velocity(u, v,
+                              np.ravel(Particles.distances),
+                              np.ravel(Particles.jvec),
+                              np.ravel(Particles.ivec),
+                              blocked=None, out=weight)
+
+    # buried rock: no movement originating outside the aquifer
+    weight[~Particles.aquifer_mask, :] = 0.0
+
+    # Final checks, eliminate invalid choices
+    clear_borders(weight)
+
+    # set the subsurface arrays in the Particles object; the pore
+    # velocity magnitude and orientation reuse the surface clamp
+    # discipline for the subsurface travel-time calculation
+    (Particles.gw_u, Particles.gw_v,
+     Particles.velocity_sub,
+     Particles.velocity_angle_sub) = calc_velocity_state(u, v)
+    Particles.weight_sub = weight
+
+
 def calculate_new_ind(ind, new_cell, iwalk, jwalk):
     """Add new cell location (1-8 value) to the previous index.
 
